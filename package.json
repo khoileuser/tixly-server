@@ -10,8 +10,11 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.958.0",
+    "@smithy/node-http-handler": "^4.4.7",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
+    "lib-dynamodb": "github:aws-sdk/lib-dynamodb",
     "mongoose": "^9.0.2"
   },
   "devDependencies": {
