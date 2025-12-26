@@ -5,10 +5,19 @@ const connectDB = require('./config/db');
 const env = require('./config/env');
 const routes = require('./routes');
 const initializeTables = require('./config/initDB');
+const eventService = require('./services/event.service');
 
 const app = express();
 
 const dynamoClient = connectDB({
+  region: env.aws.region || 'us-east-1',
+  endpoint: env.aws.dynamodbEndpoint,
+  accessKeyId: env.aws.awsAccessKeyId,
+  secretAccessKey: env.aws.awsSecretAccessKey,
+});
+
+// Initialize event service with DynamoDB client
+eventService.initDynamoDB({
   region: env.aws.region || 'us-east-1',
   endpoint: env.aws.dynamodbEndpoint,
   accessKeyId: env.aws.awsAccessKeyId,
