@@ -9,11 +9,22 @@ const env = {
     dynamodbEndpoint: process.env.DYNAMODB_ENDPOINT,
     awsAccessKeyId: process.env.AWS_ACCESS_KEY_ID,
     awsSecretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+    cognitoUserPoolId: process.env.COGNITO_USER_POOL_ID,
+    cognitoClientId: process.env.COGNITO_CLIENT_ID,
+    cognitoClientSecret: process.env.COGNITO_CLIENT_SECRET,
   },
 };
 
 if (!env.aws.region) {
   throw new Error('AWS_REGION is not defined');
+}
+
+if (!env.aws.cognitoUserPoolId) {
+  throw new Error('COGNITO_USER_POOL_ID is not defined');
+}
+
+if (!env.aws.cognitoClientId) {
+  throw new Error('COGNITO_CLIENT_ID is not defined');
 }
 
 module.exports = env;
