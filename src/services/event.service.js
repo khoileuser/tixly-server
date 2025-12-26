@@ -29,6 +29,37 @@ const initDynamoDB = (config) => {
 };
 
 /**
+ * Calculate event time status dynamically based on date
+ */
+const calculateEventTimeStatus = (event) => {
+  const eventDate = new Date(event.date);
+  const now = new Date();
+
+  return eventDate > now ? 'upcoming' : 'past';
+};
+
+/**
+ * Calculate available seats
+ */
+const getAvailableSeats = (event) => {
+  return event.totalSeats - (event.takenSeats?.length || 0);
+};
+
+/**
+ * Enrich event with dynamic fields
+ */
+const enrichEvent = (event) => {
+  if (!event) return null;
+
+  return {
+    ...event,
+    timeStatus: calculateEventTimeStatus(event), // upcoming or past
+    availableSeats: getAvailableSeats(event),
+    // status field from DB remains as is (PUBLISHED or DRAFT)
+  };
+};
+
+/**
  * Get event by ID
  */
 const getEventById = async (eventId) => {
@@ -51,7 +82,7 @@ const getEventById = async (eventId) => {
 
     return {
       success: true,
-      data: response.Item,
+      data: enrichEvent(response.Item),
     };
   } catch (error) {
     console.error('Error getting event:', error);
@@ -64,15 +95,20 @@ const getEventById = async (eventId) => {
  */
 const getAllEvents = async (filters = {}) => {
   try {
-    const { status, categoryId, limit = 50 } = filters;
+    const {
+      status,
+      categoryId,
+      limit = 50,
+      includeUnpublished = false,
+    } = filters;
 
     let command;
 
-    // If filtering by status, use the StatusDateIndex GSI
-    if (status) {
+    // If filtering by publication status (PUBLISHED/DRAFT), use StatusIndex
+    if (status && (status === 'PUBLISHED' || status === 'DRAFT')) {
       command = new QueryCommand({
         TableName: 'Events',
-        IndexName: 'StatusDateIndex',
+        IndexName: 'StatusIndex',
         KeyConditionExpression: '#status = :status',
         ExpressionAttributeNames: {
           '#status': 'status',
@@ -80,24 +116,43 @@ const getAllEvents = async (filters = {}) => {
         ExpressionAttributeValues: {
           ':status': status,
         },
-        Limit: limit,
       });
     } else {
-      // Otherwise, scan the table
+      // Otherwise scan - for public API, default to only PUBLISHED events
       command = new ScanCommand({
         TableName: 'Events',
-        Limit: limit,
+        FilterExpression: includeUnpublished
+          ? undefined
+          : '#status = :published',
+        ExpressionAttributeNames: includeUnpublished
+          ? undefined
+          : {
+              '#status': 'status',
+            },
+        ExpressionAttributeValues: includeUnpublished
+          ? undefined
+          : {
+              ':published': 'PUBLISHED',
+            },
       });
     }
 
     const response = await dynamoDb.send(command);
 
-    let events = response.Items || [];
+    let events = (response.Items || []).map(enrichEvent);
 
-    // Filter by category if specified
+    // Filter by category if specified (check if categoryId is in categoryIds array)
     if (categoryId) {
-      events = events.filter((event) => event.categoryId === categoryId);
+      events = events.filter(
+        (event) => event.categoryIds && event.categoryIds.includes(categoryId)
+      );
     }
+
+    // Sort by date
+    events.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    // Apply limit after filtering
+    events = events.slice(0, limit);
 
     return {
       success: true,
@@ -113,22 +168,36 @@ const getAllEvents = async (filters = {}) => {
 /**
  * Get events by category
  */
-const getEventsByCategory = async (categoryId) => {
+const getEventsByCategory = async (categoryId, includeUnpublished = false) => {
   try {
     const command = new ScanCommand({
       TableName: 'Events',
-      FilterExpression: 'categoryId = :categoryId',
-      ExpressionAttributeValues: {
-        ':categoryId': categoryId,
-      },
+      FilterExpression: includeUnpublished
+        ? 'contains(categoryIds, :categoryId)'
+        : 'contains(categoryIds, :categoryId) AND #status = :published',
+      ExpressionAttributeNames: includeUnpublished
+        ? undefined
+        : {
+            '#status': 'status',
+          },
+      ExpressionAttributeValues: includeUnpublished
+        ? {
+            ':categoryId': categoryId,
+          }
+        : {
+            ':categoryId': categoryId,
+            ':published': 'PUBLISHED',
+          },
     });
 
     const response = await dynamoDb.send(command);
 
+    const events = (response.Items || []).map(enrichEvent);
+
     return {
       success: true,
-      data: response.Items || [],
-      count: response.Items?.length || 0,
+      data: events,
+      count: events.length,
     };
   } catch (error) {
     console.error('Error getting events by category:', error);
@@ -137,30 +206,49 @@ const getEventsByCategory = async (categoryId) => {
 };
 
 /**
- * Get upcoming events (events with status 'upcoming')
+ * Get upcoming events (events with date in the future and PUBLISHED status)
  */
-const getUpcomingEvents = async (limit = 20) => {
+const getUpcomingEvents = async (limit = 20, includeUnpublished = false) => {
   try {
-    const command = new QueryCommand({
+    const now = new Date().toISOString();
+
+    const command = new ScanCommand({
       TableName: 'Events',
-      IndexName: 'StatusDateIndex',
-      KeyConditionExpression: '#status = :status',
-      ExpressionAttributeNames: {
-        '#status': 'status',
-      },
-      ExpressionAttributeValues: {
-        ':status': 'upcoming',
-      },
-      Limit: limit,
-      ScanIndexForward: true, // Sort by date ascending (earliest first)
+      FilterExpression: includeUnpublished
+        ? '#date > :now'
+        : '#date > :now AND #status = :published',
+      ExpressionAttributeNames: includeUnpublished
+        ? {
+            '#date': 'date',
+          }
+        : {
+            '#date': 'date',
+            '#status': 'status',
+          },
+      ExpressionAttributeValues: includeUnpublished
+        ? {
+            ':now': now,
+          }
+        : {
+            ':now': now,
+            ':published': 'PUBLISHED',
+          },
     });
 
     const response = await dynamoDb.send(command);
 
+    let events = (response.Items || []).map(enrichEvent);
+
+    // Sort by date ascending (earliest first)
+    events.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    // Apply limit
+    events = events.slice(0, limit);
+
     return {
       success: true,
-      data: response.Items || [],
-      count: response.Items?.length || 0,
+      data: events,
+      count: events.length,
     };
   } catch (error) {
     console.error('Error getting upcoming events:', error);

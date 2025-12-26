@@ -6,6 +6,8 @@ const env = require('./config/env');
 const routes = require('./routes');
 const initializeTables = require('./config/initDB');
 const eventService = require('./services/event.service');
+const bookingService = require('./services/booking.service');
+const { startCleanupScheduler } = require('./jobs/cleanupBookings');
 
 const app = express();
 
@@ -23,6 +25,9 @@ eventService.initDynamoDB({
   accessKeyId: env.aws.awsAccessKeyId,
   secretAccessKey: env.aws.awsSecretAccessKey,
 });
+
+// Initialize booking service with DynamoDB client
+bookingService.initDynamoDB();
 
 // Initialize DynamoDB tables on startup
 const startServer = async () => {
@@ -51,8 +56,12 @@ const startServer = async () => {
       res.status(200).json({ status: 'OK' });
     });
 
+    // Start booking cleanup scheduler
+    startCleanupScheduler();
+
     app.listen(env.port, () => {
       console.log(`Server running on port ${env.port}`);
+      console.log(`Booking timeout: ${env.bookingTimeoutMinutes} minutes`);
     });
   } catch (err) {
     console.error('Error initializing server:', err);

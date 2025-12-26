@@ -3,6 +3,7 @@ require('dotenv').config();
 const env = {
   port: process.env.PORT || 3000,
   nodeEnv: process.env.NODE_ENV || 'development',
+  bookingTimeoutMinutes: parseInt(process.env.BOOKING_TIMEOUT_MINUTES) || 30,
 
   aws: {
     region: process.env.AWS_REGION || 'ap-southeast-1',
