@@ -1,9 +1,10 @@
 const express = require('express');
+const cors = require('cors');
 
 const connectDB = require('./config/db');
 const env = require('./config/env');
 const routes = require('./routes');
-const { ListTablesCommand } = require('@aws-sdk/client-dynamodb');
+const initializeTables = require('./config/initDB');
 
 const app = express();
 
@@ -14,25 +15,40 @@ const dynamoClient = connectDB({
   secretAccessKey: env.aws.awsSecretAccessKey,
 });
 
-dynamoClient
-  .send(new ListTablesCommand({}))
-  .then((data) => {
-    console.log('Test DB Connection Success');
-  })
-  .catch((err) => {
-    console.error('Error connecting to DynamoDB:', err);
-  });
+// Initialize DynamoDB tables on startup
+const startServer = async () => {
+  try {
+    console.log('Connecting to DynamoDB...');
+    await initializeTables(dynamoClient);
+    console.log('✓ Database initialization complete');
 
-app.locals.dynamoClient = dynamoClient;
+    app.locals.dynamoClient = dynamoClient;
 
-app.use(express.json());
+    // Enable CORS for all routes
+    app.use(
+      cors({
+        origin: ['http://localhost:3000'],
+        credentials: true,
+        methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+        allowedHeaders: ['Content-Type', 'Authorization'],
+      })
+    );
 
-app.use('/api/v1', routes);
+    app.use(express.json());
 
-app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'OK' });
-});
+    app.use('/api/v1', routes);
 
-app.listen(env.port, () => {
-  console.log(`Server running on port ${env.port}`);
-});
+    app.get('/health', (req, res) => {
+      res.status(200).json({ status: 'OK' });
+    });
+
+    app.listen(env.port, () => {
+      console.log(`Server running on port ${env.port}`);
+    });
+  } catch (err) {
+    console.error('Error initializing server:', err);
+    process.exit(1);
+  }
+};
+
+startServer();
