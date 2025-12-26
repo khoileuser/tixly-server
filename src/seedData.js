@@ -3,12 +3,16 @@ const {
   DynamoDBDocumentClient,
   PutCommand,
   ScanCommand,
+  DeleteCommand,
 } = require('@aws-sdk/lib-dynamodb');
 const { v4: uuidv4 } = require('uuid');
 const { NodeHttpHandler } = require('@smithy/node-http-handler');
 
 // Load environment variables
 require('dotenv').config();
+
+// Check for force flag
+const FORCE_RESEED = process.argv.includes('--force');
 
 // Initialize DynamoDB client with proper credentials
 const clientConfig = {
@@ -30,8 +34,12 @@ if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
   };
 } else {
-  console.warn('⚠️  Warning: AWS credentials not found in environment variables.');
-  console.warn('   The script will use default AWS credential chain (IAM roles, ~/.aws/credentials, etc.)');
+  console.warn(
+    '⚠️  Warning: AWS credentials not found in environment variables.'
+  );
+  console.warn(
+    '   The script will use default AWS credential chain (IAM roles, ~/.aws/credentials, etc.)'
+  );
 }
 
 const client = new DynamoDBClient(clientConfig);
@@ -51,6 +59,46 @@ const isTableEmpty = async (tableName) => {
   } catch (error) {
     console.error(`Error checking ${tableName}:`, error.message);
     return false;
+  }
+};
+
+/**
+ * Clear all data from a table
+ */
+const clearTable = async (tableName) => {
+  try {
+    console.log(`🗑️  Clearing ${tableName}...`);
+    const scanCommand = new ScanCommand({
+      TableName: tableName,
+    });
+    const response = await dynamoDb.send(scanCommand);
+
+    if (response.Items.length === 0) {
+      console.log(`   No items to clear in ${tableName}`);
+      return;
+    }
+
+    // Determine the primary key
+    let keyName = 'id';
+    if (tableName === 'Tickets') {
+      keyName = 'ticketId';
+    }
+
+    // Delete all items
+    for (const item of response.Items) {
+      await dynamoDb.send(
+        new DeleteCommand({
+          TableName: tableName,
+          Key: { [keyName]: item[keyName] },
+        })
+      );
+    }
+
+    console.log(
+      `   ✓ Cleared ${response.Items.length} items from ${tableName}`
+    );
+  } catch (error) {
+    console.error(`   ✗ Error clearing ${tableName}:`, error.message);
   }
 };
 
@@ -77,7 +125,9 @@ const insertItem = async (tableName, item) => {
 const seedCategories = async () => {
   console.log('\n📁 Seeding Categories...');
 
-  if (!(await isTableEmpty('Categories'))) {
+  if (FORCE_RESEED) {
+    await clearTable('Categories');
+  } else if (!(await isTableEmpty('Categories'))) {
     console.log('Categories table already has data. Skipping...');
     return [];
   }
@@ -134,7 +184,9 @@ const seedCategories = async () => {
 const seedEvents = async (categories) => {
   console.log('\n🎉 Seeding Events...');
 
-  if (!(await isTableEmpty('Events'))) {
+  if (FORCE_RESEED) {
+    await clearTable('Events');
+  } else if (!(await isTableEmpty('Events'))) {
     console.log('Events table already has data. Skipping...');
     return [];
   }
@@ -155,15 +207,15 @@ const seedEvents = async (categories) => {
       date: getFutureDate(45),
       location: 'Central Park, New York, NY',
       venue: 'Central Park Main Stage',
-      categoryId:
+      categoryIds: [
         categories.find((c) => c.name === 'Music')?.id || categories[0]?.id,
-      categoryName: 'Music',
-      price: 150.0,
-      totalTickets: 5000,
-      availableTickets: 5000,
-      status: 'upcoming',
+      ],
+      pricePerSeat: 150.0,
+      totalSeats: 5000,
+      takenSeats: [],
+      seatsPerRow: 20,
+      status: 'PUBLISHED',
       imageUrl: 'https://images.unsplash.com/photo-1459749411175-04bf5292ceea',
-      organizerId: 'system',
       organizerName: 'Music Events Co.',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -176,15 +228,15 @@ const seedEvents = async (categories) => {
       date: getFutureDate(30),
       location: 'Madison Square Garden, New York, NY',
       venue: 'Madison Square Garden',
-      categoryId:
+      categoryIds: [
         categories.find((c) => c.name === 'Sports')?.id || categories[1]?.id,
-      categoryName: 'Sports',
-      price: 250.0,
-      totalTickets: 2000,
-      availableTickets: 1500,
-      status: 'upcoming',
+      ],
+      pricePerSeat: 250.0,
+      totalSeats: 2000,
+      takenSeats: [],
+      seatsPerRow: 20,
+      status: 'PUBLISHED',
       imageUrl: 'https://images.unsplash.com/photo-1546519638-68e109498ffc',
-      organizerId: 'system',
       organizerName: 'NBA Events',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -197,15 +249,15 @@ const seedEvents = async (categories) => {
       date: getFutureDate(15),
       location: 'Richard Rodgers Theatre, New York, NY',
       venue: 'Richard Rodgers Theatre',
-      categoryId:
+      categoryIds: [
         categories.find((c) => c.name === 'Theater')?.id || categories[2]?.id,
-      categoryName: 'Theater',
-      price: 180.0,
-      totalTickets: 800,
-      availableTickets: 200,
-      status: 'upcoming',
+      ],
+      pricePerSeat: 180.0,
+      totalSeats: 800,
+      takenSeats: [],
+      seatsPerRow: 16,
+      status: 'PUBLISHED',
       imageUrl: 'https://images.unsplash.com/photo-1503095396549-807759245b35',
-      organizerId: 'system',
       organizerName: 'Broadway Productions',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -218,15 +270,15 @@ const seedEvents = async (categories) => {
       date: getFutureDate(20),
       location: 'Comedy Cellar, New York, NY',
       venue: 'Comedy Cellar - Main Room',
-      categoryId:
+      categoryIds: [
         categories.find((c) => c.name === 'Comedy')?.id || categories[3]?.id,
-      categoryName: 'Comedy',
-      price: 75.0,
-      totalTickets: 300,
-      availableTickets: 50,
-      status: 'upcoming',
+      ],
+      pricePerSeat: 75.0,
+      totalSeats: 300,
+      takenSeats: [],
+      seatsPerRow: 15,
+      status: 'PUBLISHED',
       imageUrl: 'https://images.unsplash.com/photo-1585699324551-f6c309eedeca',
-      organizerId: 'system',
       organizerName: 'Comedy Central Productions',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -239,16 +291,16 @@ const seedEvents = async (categories) => {
       date: getFutureDate(60),
       location: 'Moscone Center, San Francisco, CA',
       venue: 'Moscone Convention Center',
-      categoryId:
+      categoryIds: [
         categories.find((c) => c.name === 'Conference')?.id ||
-        categories[4]?.id,
-      categoryName: 'Conference',
-      price: 500.0,
-      totalTickets: 3000,
-      availableTickets: 2500,
-      status: 'upcoming',
+          categories[4]?.id,
+      ],
+      pricePerSeat: 500.0,
+      totalSeats: 3000,
+      takenSeats: [],
+      seatsPerRow: 20,
+      status: 'PUBLISHED',
       imageUrl: 'https://images.unsplash.com/photo-1540575467063-178a50c2df87',
-      organizerId: 'system',
       organizerName: 'TechCrunch',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -261,16 +313,16 @@ const seedEvents = async (categories) => {
       date: getFutureDate(25),
       location: 'Brooklyn Bridge Park, Brooklyn, NY',
       venue: 'Brooklyn Bridge Park',
-      categoryId:
+      categoryIds: [
         categories.find((c) => c.name === 'Food & Drink')?.id ||
-        categories[5]?.id,
-      categoryName: 'Food & Drink',
-      price: 85.0,
-      totalTickets: 1500,
-      availableTickets: 1200,
-      status: 'upcoming',
+          categories[5]?.id,
+      ],
+      pricePerSeat: 85.0,
+      totalSeats: 1500,
+      takenSeats: [],
+      seatsPerRow: 20,
+      status: 'PUBLISHED',
       imageUrl: 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1',
-      organizerId: 'system',
       organizerName: 'NYC Food Events',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -283,15 +335,15 @@ const seedEvents = async (categories) => {
       date: getFutureDate(10),
       location: 'Blue Note Jazz Club, New York, NY',
       venue: 'Blue Note Jazz Club',
-      categoryId:
+      categoryIds: [
         categories.find((c) => c.name === 'Music')?.id || categories[0]?.id,
-      categoryName: 'Music',
-      price: 65.0,
-      totalTickets: 200,
-      availableTickets: 180,
-      status: 'upcoming',
+      ],
+      pricePerSeat: 65.0,
+      totalSeats: 200,
+      takenSeats: [],
+      seatsPerRow: 10,
+      status: 'PUBLISHED',
       imageUrl: 'https://images.unsplash.com/photo-1415201364774-f6f0bb35f28f',
-      organizerId: 'system',
       organizerName: 'Blue Note Entertainment',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -304,15 +356,15 @@ const seedEvents = async (categories) => {
       date: getFutureDate(90),
       location: 'New York City, NY',
       venue: 'Starting Line: Staten Island',
-      categoryId:
+      categoryIds: [
         categories.find((c) => c.name === 'Sports')?.id || categories[1]?.id,
-      categoryName: 'Sports',
-      price: 295.0,
-      totalTickets: 50000,
-      availableTickets: 45000,
-      status: 'upcoming',
+      ],
+      pricePerSeat: 295.0,
+      totalSeats: 50000,
+      takenSeats: [],
+      seatsPerRow: 20,
+      status: 'PUBLISHED',
       imageUrl: 'https://images.unsplash.com/photo-1452626038306-9aae5e071dd3',
-      organizerId: 'system',
       organizerName: 'New York Road Runners',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -333,7 +385,9 @@ const seedEvents = async (categories) => {
 const seedTickets = async (events) => {
   console.log('\n🎫 Seeding Tickets...');
 
-  if (!(await isTableEmpty('Tickets'))) {
+  if (FORCE_RESEED) {
+    await clearTable('Tickets');
+  } else if (!(await isTableEmpty('Tickets'))) {
     console.log('Tickets table already has data. Skipping...');
     return [];
   }
@@ -342,33 +396,29 @@ const seedTickets = async (events) => {
   // In production, these would be created when users purchase tickets
   const tickets = [
     {
-      id: uuidv4(),
+      ticketId: uuidv4(),
       eventId: events[0]?.id, // Summer Music Festival
       userId: 'sample-user-1', // This would be a real Cognito user ID
-      userName: 'Sample User',
-      userEmail: 'sample@example.com',
+      name: 'Sample User',
+      email: 'sample@example.com',
+      phone: '+1234567890',
       purchaseDate: new Date().toISOString(),
-      ticketType: 'General Admission',
-      price: 150.0,
-      quantity: 2,
-      totalAmount: 300.0,
+      pricePerSeat: 150.0,
+      takenSeats: [1, 2],
       status: 'confirmed',
-      qrCode: `TICKET-${uuidv4()}`,
       createdAt: new Date().toISOString(),
     },
     {
-      id: uuidv4(),
+      ticketId: uuidv4(),
       eventId: events[2]?.id, // Hamilton
       userId: 'sample-user-2',
-      userName: 'Sample User 2',
-      userEmail: 'sample2@example.com',
+      name: 'Sample User 2',
+      email: 'sample2@example.com',
+      phone: '+1234567891',
       purchaseDate: new Date().toISOString(),
-      ticketType: 'Premium Seating',
-      price: 180.0,
-      quantity: 1,
-      totalAmount: 180.0,
+      pricePerSeat: 180.0,
+      takenSeats: [5],
       status: 'confirmed',
-      qrCode: `TICKET-${uuidv4()}`,
       createdAt: new Date().toISOString(),
     },
   ];
@@ -385,6 +435,9 @@ const seedTickets = async (events) => {
  */
 const seedDatabase = async () => {
   console.log('🌱 Starting database seeding...\n');
+  if (FORCE_RESEED) {
+    console.log('⚠️  FORCE MODE: Clearing existing data before seeding\n');
+  }
   console.log('='.repeat(50));
 
   try {
@@ -402,6 +455,12 @@ const seedDatabase = async () => {
     console.log(
       '\n💡 Note: User data is created through Cognito registration.'
     );
+    if (!FORCE_RESEED && (categories.length === 0 || events.length === 0)) {
+      console.log(
+        '\n💡 Tip: Use --force flag to clear and re-seed existing data:'
+      );
+      console.log('   bun seed --force');
+    }
     console.log('='.repeat(50));
   } catch (error) {
     console.error('\n❌ Error seeding database:', error);

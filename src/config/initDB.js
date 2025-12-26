@@ -69,11 +69,8 @@ const initializeTables = async (dynamoClient) => {
             },
           },
           {
-            IndexName: 'StatusDateIndex',
-            KeySchema: [
-              { AttributeName: 'status', KeyType: 'HASH' },
-              { AttributeName: 'date', KeyType: 'RANGE' },
-            ],
+            IndexName: 'StatusIndex',
+            KeySchema: [{ AttributeName: 'status', KeyType: 'HASH' }],
             Projection: { ProjectionType: 'ALL' },
             ProvisionedThroughput: {
               ReadCapacityUnits: 5,
@@ -103,11 +100,11 @@ const initializeTables = async (dynamoClient) => {
       name: 'Tickets',
       schema: {
         TableName: 'Tickets',
-        KeySchema: [{ AttributeName: 'id', KeyType: 'HASH' }],
+        KeySchema: [{ AttributeName: 'ticketId', KeyType: 'HASH' }],
         AttributeDefinitions: [
-          { AttributeName: 'id', AttributeType: 'S' },
+          { AttributeName: 'ticketId', AttributeType: 'S' },
           { AttributeName: 'eventId', AttributeType: 'S' },
-          { AttributeName: 'userId', AttributeType: 'S' }, // This will store Cognito's sub
+          { AttributeName: 'userId', AttributeType: 'S' },
           { AttributeName: 'status', AttributeType: 'S' },
         ],
         GlobalSecondaryIndexes: [
@@ -121,7 +118,7 @@ const initializeTables = async (dynamoClient) => {
             },
           },
           {
-            IndexName: 'UserIdIndex', // Query tickets by Cognito user ID
+            IndexName: 'UserIdIndex',
             KeySchema: [{ AttributeName: 'userId', KeyType: 'HASH' }],
             Projection: { ProjectionType: 'ALL' },
             ProvisionedThroughput: {
