@@ -14,8 +14,7 @@
     "@smithy/node-http-handler": "^4.4.7",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
-    "lib-dynamodb": "github:aws-sdk/lib-dynamodb",
-    "mongoose": "^9.0.2"
+    "lib-dynamodb": "github:aws-sdk/lib-dynamodb"
   },
   "devDependencies": {
     "nodemon": "^3.1.11"
