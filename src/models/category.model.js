@@ -21,10 +21,9 @@ const tableSchema = {
 
 // Validation Schema
 const validationSchema = Joi.object({
-  id: Joi.string().uuid().optional(), // Auto-generated if not provided
+  id: Joi.string().uuid().optional(),
   name: Joi.string().required().min(2).max(50),
   description: Joi.string().optional().max(200),
-  iconUrl: Joi.string().uri().optional(),
   createdAt: Joi.string().isoDate().optional(),
   updatedAt: Joi.string().isoDate().optional(),
 });

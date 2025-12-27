@@ -78,7 +78,7 @@ const register = async (userData, dynamoClient) => {
       cognitoId,
       username,
       email,
-      firstName: name,
+      name: name,
       phoneNumber: phoneNumber || undefined,
       role: 'user',
     };
@@ -86,11 +86,8 @@ const register = async (userData, dynamoClient) => {
     // Validate user data
     const validatedUser = UserModel.validate(userToCreate);
 
-    // Prepare for creation (adds timestamps)
-    const userItem = UserModel.prepareForCreation({
-      ...validatedUser,
-      tickets: [], // Legacy field
-    });
+    // Prepare for creation (adds timestamps and ticketIds)
+    const userItem = UserModel.prepareForCreation(validatedUser);
 
     await dynamoClient.send(
       new PutCommand({

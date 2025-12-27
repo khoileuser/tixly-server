@@ -42,22 +42,19 @@ const tableSchema = {
   },
 };
 
-// Validation Schema (similar to Mongoose schema)
+// Validation Schema
 const validationSchema = Joi.object({
   cognitoId: Joi.string().required(),
-  email: Joi.string().email().required(),
   username: Joi.string().alphanum().min(3).max(30).required(),
-  firstName: Joi.string().min(1).max(50).optional(),
-  lastName: Joi.string().min(1).max(50).optional(),
+  name: Joi.string().min(1).max(100).optional(),
+  email: Joi.string().email().required(),
   phoneNumber: Joi.string()
     .pattern(/^\+?[1-9]\d{1,14}$/)
     .optional(),
-  role: Joi.string().valid('user', 'admin', 'organizer').default('user'),
-  isActive: Joi.boolean().default(true),
-  profilePicture: Joi.string().uri().optional(),
+  role: Joi.string().valid('user', 'admin').default('user'),
+  ticketIds: Joi.array().items(Joi.string().uuid()).default([]),
   createdAt: Joi.string().isoDate().optional(),
   updatedAt: Joi.string().isoDate().optional(),
-  lastLoginAt: Joi.string().isoDate().optional().allow(null),
 });
 
 /**
@@ -93,7 +90,7 @@ const prepareForCreation = (data) => {
   return {
     ...data,
     role: data.role || 'user',
-    isActive: data.isActive !== undefined ? data.isActive : true,
+    ticketIds: data.ticketIds || [],
     createdAt: now,
     updatedAt: now,
   };
@@ -118,12 +115,7 @@ const prepareForUpdate = (data) => {
  * @returns {string} Full name or username if name not available
  */
 const getFullName = (user) => {
-  if (user.firstName && user.lastName) {
-    return `${user.firstName} ${user.lastName}`;
-  }
-  if (user.firstName) return user.firstName;
-  if (user.lastName) return user.lastName;
-  return user.username;
+  return user.name || user.username;
 };
 
 /**

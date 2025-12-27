@@ -54,41 +54,28 @@ const tableSchema = {
   },
 };
 
-// Validation Schema (similar to Mongoose schema)
+// Validation Schema
 const validationSchema = Joi.object({
-  id: Joi.string().uuid().optional(), // Auto-generated if not provided
-  userId: Joi.string().required(),
+  id: Joi.string().uuid().optional(),
   eventId: Joi.string().uuid().required(),
+  pricePerSeat: Joi.number().min(0).required(),
   takenSeats: Joi.array()
     .items(Joi.alternatives().try(Joi.number(), Joi.string()))
     .min(1)
     .required(), // Array of seat identifiers (numbers or strings)
-  status: Joi.string()
-    .valid('PENDING', 'CONFIRMED', 'CANCELLED', 'EXPIRED')
-    .default('PENDING'),
-  paymentStatus: Joi.string()
-    .valid('UNPAID', 'PAID', 'REFUNDED')
-    .default('UNPAID'),
-  pricePerSeat: Joi.number().min(0).required(),
-  bookingCode: Joi.string().optional(), // Unique booking reference
-  expiresAt: Joi.string().isoDate().optional(), // For PENDING bookings
-  confirmedAt: Joi.string().isoDate().optional().allow(null),
-  cancelledAt: Joi.string().isoDate().optional().allow(null),
-  purchaseDate: Joi.string().isoDate().optional(),
+  userId: Joi.string().required(),
   name: Joi.string().allow('').optional(),
   email: Joi.string().email().allow('').optional(),
-  phone: Joi.string().allow('').optional(),
+  phoneNumber: Joi.string().allow('').optional(),
+  status: Joi.string()
+    .valid('PENDING', 'CONFIRMED', 'REFUNDED')
+    .default('PENDING'),
+  purchaseDate: Joi.string().isoDate().optional(),
+  refundedAt: Joi.string().isoDate().optional().allow(null),
+  expiresAt: Joi.string().isoDate().optional(), // For PENDING bookings
   createdAt: Joi.string().isoDate().optional(),
   updatedAt: Joi.string().isoDate().optional(),
 });
-
-/**
- * Generate a unique booking code
- * @returns {string} 8-character booking code
- */
-const generateBookingCode = () => {
-  return uuidv4().substring(0, 8).toUpperCase();
-};
 
 /**
  * Calculate expiration time for pending bookings
@@ -126,7 +113,7 @@ const validate = (data, options = {}) => {
 
 /**
  * Prepare booking data for creation
- * Adds auto-generated fields like id, bookingCode, timestamps, expiration
+ * Adds auto-generated fields like id, timestamps, expiration
  * @param {Object} data - Raw booking data
  * @returns {Object} Booking data ready for DynamoDB
  */
@@ -138,8 +125,6 @@ const prepareForCreation = (data) => {
     ...data,
     id: data.id || uuidv4(),
     status: data.status || 'PENDING',
-    paymentStatus: data.paymentStatus || 'UNPAID',
-    bookingCode: data.bookingCode || generateBookingCode(),
     expiresAt: isPending ? calculateExpirationTime() : undefined,
     createdAt: now,
     updatedAt: now,
@@ -190,6 +175,21 @@ const canBeCancelled = (booking) => {
 };
 
 /**
+ * Check if booking can be refunded
+ * @param {Object} booking - Booking object
+ * @returns {boolean} True if booking can be refunded (within 24 hours of purchase)
+ */
+const canBeRefunded = (booking) => {
+  if (booking.status !== 'CONFIRMED') return false;
+
+  const purchaseDate = new Date(booking.purchaseDate || booking.createdAt);
+  const now = new Date();
+  const hoursSincePurchase = (now - purchaseDate) / (1000 * 60 * 60);
+
+  return hoursSincePurchase <= 24;
+};
+
+/**
  * Prepare booking for confirmation
  * @param {Object} booking - Booking object
  * @returns {Object} Updated booking data
@@ -197,8 +197,7 @@ const canBeCancelled = (booking) => {
 const prepareForConfirmation = (booking) => {
   return {
     status: 'CONFIRMED',
-    paymentStatus: 'PAID',
-    confirmedAt: new Date().toISOString(),
+    purchaseDate: new Date().toISOString(),
     expiresAt: null, // Remove expiration
     updatedAt: new Date().toISOString(),
   };
@@ -212,8 +211,20 @@ const prepareForConfirmation = (booking) => {
 const prepareForCancellation = (booking) => {
   return {
     status: 'CANCELLED',
-    cancelledAt: new Date().toISOString(),
     expiresAt: null,
+    updatedAt: new Date().toISOString(),
+  };
+};
+
+/**
+ * Prepare booking for refund
+ * @param {Object} booking - Booking object
+ * @returns {Object} Updated booking data
+ */
+const prepareForRefund = (booking) => {
+  return {
+    status: 'REFUNDED',
+    refundedAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
 };
@@ -225,11 +236,12 @@ module.exports = {
   validate,
   prepareForCreation,
   prepareForUpdate,
-  generateBookingCode,
   calculateExpirationTime,
   isExpired,
   canBeConfirmed,
   canBeCancelled,
+  canBeRefunded,
   prepareForConfirmation,
   prepareForCancellation,
+  prepareForRefund,
 };

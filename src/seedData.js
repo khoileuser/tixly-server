@@ -134,60 +134,70 @@ const seedCategories = async () => {
       name: 'Music',
       description: 'Concerts, festivals, and live music performances',
       createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     },
     {
       id: uuidv4(),
       name: 'Sports',
       description: 'Sporting events, matches, and tournaments',
       createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     },
     {
       id: uuidv4(),
       name: 'Theater',
       description: 'Plays, musicals, and theatrical performances',
       createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     },
     {
       id: uuidv4(),
       name: 'Comedy',
       description: 'Stand-up comedy shows and comedy events',
       createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     },
     {
       id: uuidv4(),
       name: 'Conference',
       description: 'Business conferences, seminars, and workshops',
       createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     },
     {
       id: uuidv4(),
       name: 'Food & Drink',
       description: 'Food festivals, wine tastings, and culinary events',
       createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     },
     {
       id: uuidv4(),
       name: 'Art & Culture',
       description: 'Art exhibitions, gallery openings, and cultural events',
       createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     },
     {
       id: uuidv4(),
       name: 'Family',
       description: 'Family-friendly events and activities',
       createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     },
     {
       id: uuidv4(),
       name: 'Wellness',
       description: 'Yoga, meditation, fitness, and wellness events',
       createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     },
     {
       id: uuidv4(),
       name: 'Nightlife',
       description: 'Clubs, parties, and nightlife events',
       createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     },
   ];
 
@@ -211,10 +221,11 @@ const seedEvents = async (categories) => {
     return [];
   }
 
-  // Helper function to get future dates
-  const getFutureDate = (daysFromNow) => {
+  // Helper function to get future dates with time
+  const getFutureDateTime = (daysFromNow, hour = 19, minute = 0) => {
     const date = new Date();
     date.setDate(date.getDate() + daysFromNow);
+    date.setHours(hour, minute, 0, 0);
     return date.toISOString();
   };
 
@@ -224,7 +235,7 @@ const seedEvents = async (categories) => {
       title: 'Summer Music Festival 2025',
       description:
         'A three-day outdoor music festival featuring top artists from around the world. Enjoy multiple stages, food vendors, and camping options.',
-      date: getFutureDate(45),
+      datetime: getFutureDateTime(45, 14, 0),
       location: 'Central Park, New York, NY',
       venue: 'Central Park Main Stage',
       categoryIds: [
@@ -245,7 +256,7 @@ const seedEvents = async (categories) => {
       title: 'NBA Championship Finals - Game 5',
       description:
         'Watch the exciting NBA Championship Finals Game 5. Experience the thrill of professional basketball at its finest.',
-      date: getFutureDate(30),
+      datetime: getFutureDateTime(30, 20, 0),
       location: 'Madison Square Garden, New York, NY',
       venue: 'Madison Square Garden',
       categoryIds: [
@@ -266,7 +277,7 @@ const seedEvents = async (categories) => {
       title: 'Hamilton - Broadway Show',
       description:
         'The story of America then, told by America now. Experience the revolutionary musical phenomenon that is Hamilton.',
-      date: getFutureDate(15),
+      datetime: getFutureDateTime(15, 20, 0),
       location: 'Richard Rodgers Theatre, New York, NY',
       venue: 'Richard Rodgers Theatre',
       categoryIds: [
@@ -287,7 +298,7 @@ const seedEvents = async (categories) => {
       title: 'Comedy Night with Dave Chappelle',
       description:
         'An evening of comedy with one of the greatest stand-up comedians of all time. Limited seats available!',
-      date: getFutureDate(20),
+      datetime: getFutureDateTime(20, 21, 0),
       location: 'Comedy Cellar, New York, NY',
       venue: 'Comedy Cellar - Main Room',
       categoryIds: [
@@ -308,7 +319,7 @@ const seedEvents = async (categories) => {
       title: 'TechCrunch Disrupt 2025',
       description:
         "The world's leading authority in debuting revolutionary startups, introducing game-changing technologies and discussing what's top of mind for the tech industry.",
-      date: getFutureDate(60),
+      datetime: getFutureDateTime(60, 9, 0),
       location: 'Moscone Center, San Francisco, CA',
       venue: 'Moscone Convention Center',
       categoryIds: [
@@ -330,7 +341,7 @@ const seedEvents = async (categories) => {
       title: 'Food & Wine Festival',
       description:
         "Sample dishes from the city's best restaurants, attend cooking demonstrations, and enjoy wine tastings from renowned vineyards.",
-      date: getFutureDate(25),
+      datetime: getFutureDateTime(25, 12, 0),
       location: 'Brooklyn Bridge Park, Brooklyn, NY',
       venue: 'Brooklyn Bridge Park',
       categoryIds: [
@@ -352,7 +363,7 @@ const seedEvents = async (categories) => {
       title: 'Jazz Night at Blue Note',
       description:
         "An intimate evening featuring world-class jazz musicians in one of NYC's most iconic jazz clubs.",
-      date: getFutureDate(10),
+      datetime: getFutureDateTime(10, 21, 30),
       location: 'Blue Note Jazz Club, New York, NY',
       venue: 'Blue Note Jazz Club',
       categoryIds: [
@@ -373,7 +384,7 @@ const seedEvents = async (categories) => {
       title: 'New York Marathon 2025',
       description:
         "Be part of the world's largest marathon! Run through all five boroughs of New York City.",
-      date: getFutureDate(90),
+      datetime: getFutureDateTime(90, 8, 0),
       location: 'New York City, NY',
       venue: 'Starting Line: Staten Island',
       categoryIds: [
@@ -394,7 +405,7 @@ const seedEvents = async (categories) => {
       title: 'Modern Art Exhibition',
       description:
         'Explore contemporary art from emerging and established artists. Features installations, paintings, sculptures, and digital art.',
-      date: getFutureDate(12),
+      datetime: getFutureDateTime(12, 10, 0),
       location: 'MoMA, New York, NY',
       venue: 'Museum of Modern Art',
       categoryIds: [
@@ -416,7 +427,7 @@ const seedEvents = async (categories) => {
       title: 'Kids Science Fair',
       description:
         'Interactive science demonstrations, experiments, and learning activities for children of all ages. Fun for the whole family!',
-      date: getFutureDate(18),
+      datetime: getFutureDateTime(18, 10, 0),
       location: 'Discovery Center, Brooklyn, NY',
       venue: 'Discovery Science Center',
       categoryIds: [
@@ -437,7 +448,7 @@ const seedEvents = async (categories) => {
       title: 'Yoga & Meditation Retreat',
       description:
         'A day of mindfulness, yoga sessions, meditation workshops, and wellness talks. Find your inner peace and balance.',
-      date: getFutureDate(35),
+      datetime: getFutureDateTime(35, 9, 0),
       location: 'Hudson Valley, NY',
       venue: 'Peaceful Retreat Center',
       categoryIds: [
@@ -458,7 +469,7 @@ const seedEvents = async (categories) => {
       title: 'Electronic Music Night',
       description:
         'Dance the night away with top DJs spinning house, techno, and electronic beats. VIP tables available.',
-      date: getFutureDate(8),
+      datetime: getFutureDateTime(8, 22, 0),
       location: 'Brooklyn Warehouse, Brooklyn, NY',
       venue: 'The Warehouse',
       categoryIds: [
@@ -479,7 +490,7 @@ const seedEvents = async (categories) => {
       title: 'Rock Concert - The Legends Tour',
       description:
         'Classic rock legends reunite for an unforgettable night of greatest hits and fan favorites. Special guest performers.',
-      date: getFutureDate(50),
+      datetime: getFutureDateTime(50, 20, 0),
       location: 'Barclays Center, Brooklyn, NY',
       venue: 'Barclays Center',
       categoryIds: [
@@ -500,7 +511,7 @@ const seedEvents = async (categories) => {
       title: 'Wine Tasting Experience',
       description:
         'Sample premium wines from around the world. Learn about wine pairing, production, and tasting techniques from expert sommeliers.',
-      date: getFutureDate(28),
+      datetime: getFutureDateTime(28, 18, 0),
       location: 'Tribeca, New York, NY',
       venue: 'The Wine Cellar',
       categoryIds: [
@@ -522,7 +533,7 @@ const seedEvents = async (categories) => {
       title: 'Shakespeare in the Park',
       description:
         "Experience the magic of Shakespeare performed outdoors under the stars. This season's production: A Midsummer Night's Dream.",
-      date: getFutureDate(22),
+      datetime: getFutureDateTime(22, 19, 0),
       location: 'Central Park, New York, NY',
       venue: 'Delacorte Theater',
       categoryIds: [

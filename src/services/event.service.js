@@ -133,8 +133,8 @@ const getAllEvents = async (filters = {}) => {
       );
     }
 
-    // Sort by date
-    events.sort((a, b) => new Date(a.date) - new Date(b.date));
+    // Sort by datetime
+    events.sort((a, b) => new Date(a.datetime) - new Date(b.datetime));
 
     // Apply limit after filtering
     events = events.slice(0, limit);
@@ -200,14 +200,14 @@ const getUpcomingEvents = async (limit = 20, includeUnpublished = false) => {
     const command = new ScanCommand({
       TableName: EventModel.tableName,
       FilterExpression: includeUnpublished
-        ? '#date > :now'
-        : '#date > :now AND #status = :published',
+        ? '#datetime > :now'
+        : '#datetime > :now AND #status = :published',
       ExpressionAttributeNames: includeUnpublished
         ? {
-            '#date': 'date',
+            '#datetime': 'datetime',
           }
         : {
-            '#date': 'date',
+            '#datetime': 'datetime',
             '#status': 'status',
           },
       ExpressionAttributeValues: includeUnpublished
@@ -224,8 +224,8 @@ const getUpcomingEvents = async (limit = 20, includeUnpublished = false) => {
 
     let events = (response.Items || []).map(enrichEvent);
 
-    // Sort by date ascending (earliest first)
-    events.sort((a, b) => new Date(a.date) - new Date(b.date));
+    // Sort by datetime ascending (earliest first)
+    events.sort((a, b) => new Date(a.datetime) - new Date(b.datetime));
 
     // Apply limit
     events = events.slice(0, limit);

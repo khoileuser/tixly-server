@@ -14,13 +14,13 @@ const tableSchema = {
   KeySchema: [{ AttributeName: 'id', KeyType: 'HASH' }],
   AttributeDefinitions: [
     { AttributeName: 'id', AttributeType: 'S' },
-    { AttributeName: 'date', AttributeType: 'S' },
+    { AttributeName: 'datetime', AttributeType: 'S' },
     { AttributeName: 'status', AttributeType: 'S' },
   ],
   GlobalSecondaryIndexes: [
     {
-      IndexName: 'DateIndex',
-      KeySchema: [{ AttributeName: 'date', KeyType: 'HASH' }],
+      IndexName: 'DatetimeIndex',
+      KeySchema: [{ AttributeName: 'datetime', KeyType: 'HASH' }],
       Projection: { ProjectionType: 'ALL' },
       ProvisionedThroughput: {
         ReadCapacityUnits: 5,
@@ -43,25 +43,24 @@ const tableSchema = {
   },
 };
 
-// Validation Schema (similar to Mongoose schema)
+// Validation Schema
 const validationSchema = Joi.object({
-  id: Joi.string().uuid().optional(), // Auto-generated if not provided
-  name: Joi.string().required().min(3).max(200),
+  id: Joi.string().uuid().optional(),
+  title: Joi.string().required().min(3).max(200),
   description: Joi.string().required().min(10).max(2000),
-  date: Joi.string().isoDate().required(),
-  time: Joi.string()
-    .required()
-    .pattern(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/), // HH:MM format
+  datetime: Joi.string().isoDate().required(),
   location: Joi.string().required().min(3).max(300),
-  category: Joi.string().required(),
-  totalSeats: Joi.number().integer().min(1).required(),
+  venue: Joi.string().optional().max(200),
+  categoryIds: Joi.array().items(Joi.string().uuid()).default([]),
   pricePerSeat: Joi.number().min(0).required(),
-  status: Joi.string()
-    .valid('active', 'cancelled', 'completed')
-    .default('active'),
+  totalSeats: Joi.number().integer().min(1).required(),
+  seatsPerRow: Joi.number().integer().min(1).optional(),
+  takenSeats: Joi.array()
+    .items(Joi.alternatives().try(Joi.number(), Joi.string()))
+    .default([]),
+  organizerName: Joi.string().required(),
   imageUrl: Joi.string().uri().optional(),
-  organizerId: Joi.string().required(),
-  takenSeats: Joi.array().items(Joi.string()).default([]),
+  status: Joi.string().valid('PUBLISHED', 'DRAFT').default('DRAFT'),
   createdAt: Joi.string().isoDate().optional(),
   updatedAt: Joi.string().isoDate().optional(),
 });
@@ -99,8 +98,9 @@ const prepareForCreation = (data) => {
   return {
     ...data,
     id: data.id || uuidv4(),
-    status: data.status || 'active',
+    status: data.status || 'DRAFT',
     takenSeats: data.takenSeats || [],
+    categoryIds: data.categoryIds || [],
     createdAt: now,
     updatedAt: now,
   };
@@ -134,10 +134,10 @@ const calculateAvailableSeats = (event) => {
  * @returns {boolean} True if event can be booked
  */
 const isBookable = (event) => {
-  if (event.status !== 'active') return false;
+  if (event.status !== 'PUBLISHED') return false;
   if (calculateAvailableSeats(event) <= 0) return false;
 
-  const eventDate = new Date(event.date);
+  const eventDate = new Date(event.datetime);
   const now = new Date();
 
   return eventDate > now;
@@ -149,7 +149,7 @@ const isBookable = (event) => {
  * @returns {string} 'upcoming' or 'past'
  */
 const getTimeStatus = (event) => {
-  const eventDate = new Date(event.date);
+  const eventDate = new Date(event.datetime);
   const now = new Date();
 
   return eventDate > now ? 'upcoming' : 'past';
