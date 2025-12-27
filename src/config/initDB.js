@@ -100,9 +100,9 @@ const initializeTables = async (dynamoClient) => {
       name: 'Tickets',
       schema: {
         TableName: 'Tickets',
-        KeySchema: [{ AttributeName: 'ticketId', KeyType: 'HASH' }],
+        KeySchema: [{ AttributeName: 'id', KeyType: 'HASH' }],
         AttributeDefinitions: [
-          { AttributeName: 'ticketId', AttributeType: 'S' },
+          { AttributeName: 'id', AttributeType: 'S' },
           { AttributeName: 'eventId', AttributeType: 'S' },
           { AttributeName: 'userId', AttributeType: 'S' },
           { AttributeName: 'status', AttributeType: 'S' },
@@ -148,25 +148,37 @@ const initializeTables = async (dynamoClient) => {
     tables.map((table) => createTableIfNotExists(dynamoClient, table))
   );
 
-  // Log results
+  // Log results (only log when tables are created or failed)
+  const createdTables = [];
+  const failedTables = [];
+
   results.forEach((result, index) => {
     if (result.status === 'fulfilled') {
-      console.log(`✓ ${tables[index].name} table: ${result.value}`);
+      if (result.value === 'Created successfully') {
+        createdTables.push(tables[index].name);
+        console.log(`${tables[index].name} table: Created successfully`);
+      }
     } else {
+      failedTables.push(tables[index].name);
       console.error(
-        `✗ ${tables[index].name} table failed:`,
+        `${tables[index].name} table failed:`,
         result.reason.message
       );
     }
   });
 
-  const allSucceeded = results.every((result) => result.status === 'fulfilled');
-  if (allSucceeded) {
-    console.log('All tables initialized successfully!');
-  } else {
+  // Only show summary if tables were created or failed
+  if (createdTables.length > 0) {
+    console.log(
+      `Database initialization complete. Created ${createdTables.length} table(s).`
+    );
+  }
+
+  if (failedTables.length > 0) {
     console.warn('Some tables failed to initialize');
   }
 
+  const allSucceeded = results.every((result) => result.status === 'fulfilled');
   return allSucceeded;
 };
 

@@ -7,8 +7,14 @@ const {
   ForgotPasswordCommand,
   ConfirmForgotPasswordCommand,
   GetUserCommand,
+  AdminGetUserCommand,
+  AdminListGroupsForUserCommand,
 } = require('@aws-sdk/client-cognito-identity-provider');
-const { PutCommand, GetCommand } = require('@aws-sdk/lib-dynamodb');
+const {
+  PutCommand,
+  GetCommand,
+  UpdateCommand,
+} = require('@aws-sdk/lib-dynamodb');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const env = require('../config/env');
@@ -118,7 +124,7 @@ const register = async (userData, dynamoClient) => {
 /**
  * Login user with Cognito
  */
-const login = async (username, password) => {
+const login = async (username, password, dynamoClient) => {
   try {
     const authParams = {
       AuthFlow: 'USER_PASSWORD_AUTH',
@@ -146,8 +152,32 @@ const login = async (username, password) => {
     const { IdToken, AccessToken, RefreshToken, ExpiresIn } =
       response.AuthenticationResult;
 
-    // Decode the ID token to get user information
+    // Decode the ID token to get user information and groups
     const decodedToken = jwt.decode(IdToken);
+    const groups = getUserGroupsFromToken(IdToken);
+    const roleFromGroups = determineRoleFromGroups(groups);
+
+    // Sync role to DynamoDB if dynamoClient is provided
+    if (dynamoClient) {
+      try {
+        await dynamoClient.send(
+          new UpdateCommand({
+            TableName: 'Users',
+            Key: { cognitoId: decodedToken.sub },
+            UpdateExpression: 'SET #role = :role',
+            ExpressionAttributeNames: {
+              '#role': 'role',
+            },
+            ExpressionAttributeValues: {
+              ':role': roleFromGroups,
+            },
+          })
+        );
+      } catch (dbError) {
+        console.error('Failed to sync role to DynamoDB:', dbError);
+        // Don't fail login if role sync fails
+      }
+    }
 
     return {
       success: true,
@@ -322,6 +352,30 @@ const confirmForgotPassword = async (username, code, newPassword) => {
 
     throw new Error(error.message || 'Password reset failed');
   }
+};
+
+/**
+ * Get user's Cognito groups from ID token
+ */
+const getUserGroupsFromToken = (idToken) => {
+  try {
+    const decodedToken = jwt.decode(idToken);
+    // Cognito includes groups in the ID token as 'cognito:groups'
+    return decodedToken['cognito:groups'] || [];
+  } catch (error) {
+    console.error('Error decoding token for groups:', error);
+    return [];
+  }
+};
+
+/**
+ * Determine role from Cognito groups (admin takes precedence)
+ */
+const determineRoleFromGroups = (groups) => {
+  if (groups.includes('admin')) {
+    return 'admin';
+  }
+  return 'user';
 };
 
 /**

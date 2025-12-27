@@ -34,7 +34,7 @@ const startServer = async () => {
   try {
     console.log('Connecting to DynamoDB...');
     await initializeTables(dynamoClient);
-    console.log('✓ Database initialization complete');
+    console.log('Database initialization complete');
 
     app.locals.dynamoClient = dynamoClient;
 
@@ -61,7 +61,6 @@ const startServer = async () => {
 
     app.listen(env.port, () => {
       console.log(`Server running on port ${env.port}`);
-      console.log(`Booking timeout: ${env.bookingTimeoutMinutes} minutes`);
     });
   } catch (err) {
     console.error('Error initializing server:', err);

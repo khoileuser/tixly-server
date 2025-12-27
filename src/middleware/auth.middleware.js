@@ -10,11 +10,18 @@ const authenticate = async (req, res, next) => {
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return res.status(401).json({
         success: false,
-        message: 'No token provided',
+        message: 'No token provided. Please log in.',
       });
     }
 
     const accessToken = authHeader.substring(7); // Remove 'Bearer ' prefix
+
+    if (!accessToken || accessToken === 'null' || accessToken === 'undefined') {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid token. Please log in again.',
+      });
+    }
 
     // Verify token with Cognito
     const result = await authService.verifyToken(accessToken);
@@ -22,7 +29,7 @@ const authenticate = async (req, res, next) => {
     if (!result.success) {
       return res.status(401).json({
         success: false,
-        message: 'Invalid token',
+        message: 'Invalid or expired token. Please log in again.',
       });
     }
 
@@ -33,7 +40,7 @@ const authenticate = async (req, res, next) => {
     console.error('Authentication error:', error);
     return res.status(401).json({
       success: false,
-      message: error.message || 'Authentication failed',
+      message: 'Authentication failed. Please log in again.',
     });
   }
 };

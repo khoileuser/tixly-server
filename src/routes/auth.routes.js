@@ -52,7 +52,8 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    const result = await authService.login(username, password);
+    const dynamoClient = req.app.locals.dynamoClient;
+    const result = await authService.login(username, password, dynamoClient);
 
     res.status(200).json(result);
   } catch (error) {
@@ -187,10 +188,21 @@ router.post('/reset-password', async (req, res) => {
 router.get('/profile', authenticate, async (req, res) => {
   try {
     const dynamoClient = req.app.locals.dynamoClient;
+    const bookingService = require('../services/booking.service');
+
+    // Get user profile
     const result = await authService.getUserProfile(
       req.user.cognitoId,
       dynamoClient
     );
+
+    // Get user's bookings/tickets
+    const userTickets = await bookingService.getUserBookings(
+      req.user.cognitoId
+    );
+
+    // Add tickets to profile data
+    result.data.tickets = userTickets;
 
     res.status(200).json(result);
   } catch (error) {

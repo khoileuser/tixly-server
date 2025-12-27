@@ -34,9 +34,7 @@ if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
   };
 } else {
-  console.warn(
-    '⚠️  Warning: AWS credentials not found in environment variables.'
-  );
+  console.warn('Warning: AWS credentials not found in environment variables.');
   console.warn(
     '   The script will use default AWS credential chain (IAM roles, ~/.aws/credentials, etc.)'
   );
@@ -67,7 +65,7 @@ const isTableEmpty = async (tableName) => {
  */
 const clearTable = async (tableName) => {
   try {
-    console.log(`🗑️  Clearing ${tableName}...`);
+    console.log(`Clearing ${tableName}...`);
     const scanCommand = new ScanCommand({
       TableName: tableName,
     });
@@ -81,7 +79,7 @@ const clearTable = async (tableName) => {
     // Determine the primary key
     let keyName = 'id';
     if (tableName === 'Tickets') {
-      keyName = 'ticketId';
+      keyName = 'id'; // Tickets table uses 'id' as primary key
     }
 
     // Delete all items
@@ -94,11 +92,9 @@ const clearTable = async (tableName) => {
       );
     }
 
-    console.log(
-      `   ✓ Cleared ${response.Items.length} items from ${tableName}`
-    );
+    console.log(`   Cleared ${response.Items.length} items from ${tableName}`);
   } catch (error) {
-    console.error(`   ✗ Error clearing ${tableName}:`, error.message);
+    console.error(`   Error clearing ${tableName}:`, error.message);
   }
 };
 
@@ -113,9 +109,9 @@ const insertItem = async (tableName, item) => {
         Item: item,
       })
     );
-    console.log(`✓ Inserted item into ${tableName}: ${item.id || item.name}`);
+    console.log(`Inserted item into ${tableName}: ${item.id || item.name}`);
   } catch (error) {
-    console.error(`✗ Error inserting into ${tableName}:`, error.message);
+    console.error(`Error inserting into ${tableName}:`, error.message);
   }
 };
 
@@ -123,7 +119,7 @@ const insertItem = async (tableName, item) => {
  * Seed Categories table
  */
 const seedCategories = async () => {
-  console.log('\n📁 Seeding Categories...');
+  console.log('\nSeeding Categories...');
 
   if (FORCE_RESEED) {
     await clearTable('Categories');
@@ -169,6 +165,30 @@ const seedCategories = async () => {
       description: 'Food festivals, wine tastings, and culinary events',
       createdAt: new Date().toISOString(),
     },
+    {
+      id: uuidv4(),
+      name: 'Art & Culture',
+      description: 'Art exhibitions, gallery openings, and cultural events',
+      createdAt: new Date().toISOString(),
+    },
+    {
+      id: uuidv4(),
+      name: 'Family',
+      description: 'Family-friendly events and activities',
+      createdAt: new Date().toISOString(),
+    },
+    {
+      id: uuidv4(),
+      name: 'Wellness',
+      description: 'Yoga, meditation, fitness, and wellness events',
+      createdAt: new Date().toISOString(),
+    },
+    {
+      id: uuidv4(),
+      name: 'Nightlife',
+      description: 'Clubs, parties, and nightlife events',
+      createdAt: new Date().toISOString(),
+    },
   ];
 
   for (const category of categories) {
@@ -182,7 +202,7 @@ const seedCategories = async () => {
  * Seed Events table
  */
 const seedEvents = async (categories) => {
-  console.log('\n🎉 Seeding Events...');
+  console.log('\nSeeding Events...');
 
   if (FORCE_RESEED) {
     await clearTable('Events');
@@ -369,6 +389,155 @@ const seedEvents = async (categories) => {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     },
+    {
+      id: uuidv4(),
+      title: 'Modern Art Exhibition',
+      description:
+        'Explore contemporary art from emerging and established artists. Features installations, paintings, sculptures, and digital art.',
+      date: getFutureDate(12),
+      location: 'MoMA, New York, NY',
+      venue: 'Museum of Modern Art',
+      categoryIds: [
+        categories.find((c) => c.name === 'Art & Culture')?.id ||
+          categories[6]?.id,
+      ],
+      pricePerSeat: 45.0,
+      totalSeats: 500,
+      takenSeats: [],
+      seatsPerRow: 20,
+      status: 'PUBLISHED',
+      imageUrl: 'https://images.unsplash.com/photo-1577083552431-6e5fd01988ec',
+      organizerName: 'MoMA',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    },
+    {
+      id: uuidv4(),
+      title: 'Kids Science Fair',
+      description:
+        'Interactive science demonstrations, experiments, and learning activities for children of all ages. Fun for the whole family!',
+      date: getFutureDate(18),
+      location: 'Discovery Center, Brooklyn, NY',
+      venue: 'Discovery Science Center',
+      categoryIds: [
+        categories.find((c) => c.name === 'Family')?.id || categories[7]?.id,
+      ],
+      pricePerSeat: 35.0,
+      totalSeats: 600,
+      takenSeats: [],
+      seatsPerRow: 20,
+      status: 'PUBLISHED',
+      imageUrl: 'https://images.unsplash.com/photo-1503676260728-1c00da094a0b',
+      organizerName: 'Discovery Center',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    },
+    {
+      id: uuidv4(),
+      title: 'Yoga & Meditation Retreat',
+      description:
+        'A day of mindfulness, yoga sessions, meditation workshops, and wellness talks. Find your inner peace and balance.',
+      date: getFutureDate(35),
+      location: 'Hudson Valley, NY',
+      venue: 'Peaceful Retreat Center',
+      categoryIds: [
+        categories.find((c) => c.name === 'Wellness')?.id || categories[8]?.id,
+      ],
+      pricePerSeat: 120.0,
+      totalSeats: 150,
+      takenSeats: [],
+      seatsPerRow: 15,
+      status: 'PUBLISHED',
+      imageUrl: 'https://images.unsplash.com/photo-1506126613408-eca07ce68773',
+      organizerName: 'Wellness Collective',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    },
+    {
+      id: uuidv4(),
+      title: 'Electronic Music Night',
+      description:
+        'Dance the night away with top DJs spinning house, techno, and electronic beats. VIP tables available.',
+      date: getFutureDate(8),
+      location: 'Brooklyn Warehouse, Brooklyn, NY',
+      venue: 'The Warehouse',
+      categoryIds: [
+        categories.find((c) => c.name === 'Nightlife')?.id || categories[9]?.id,
+      ],
+      pricePerSeat: 55.0,
+      totalSeats: 800,
+      takenSeats: [],
+      seatsPerRow: 20,
+      status: 'PUBLISHED',
+      imageUrl: 'https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3',
+      organizerName: 'Nightlife Productions',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    },
+    {
+      id: uuidv4(),
+      title: 'Rock Concert - The Legends Tour',
+      description:
+        'Classic rock legends reunite for an unforgettable night of greatest hits and fan favorites. Special guest performers.',
+      date: getFutureDate(50),
+      location: 'Barclays Center, Brooklyn, NY',
+      venue: 'Barclays Center',
+      categoryIds: [
+        categories.find((c) => c.name === 'Music')?.id || categories[0]?.id,
+      ],
+      pricePerSeat: 135.0,
+      totalSeats: 10000,
+      takenSeats: [],
+      seatsPerRow: 25,
+      status: 'PUBLISHED',
+      imageUrl: 'https://images.unsplash.com/photo-1501281668745-f7f57925c3b4',
+      organizerName: 'Live Nation',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    },
+    {
+      id: uuidv4(),
+      title: 'Wine Tasting Experience',
+      description:
+        'Sample premium wines from around the world. Learn about wine pairing, production, and tasting techniques from expert sommeliers.',
+      date: getFutureDate(28),
+      location: 'Tribeca, New York, NY',
+      venue: 'The Wine Cellar',
+      categoryIds: [
+        categories.find((c) => c.name === 'Food & Drink')?.id ||
+          categories[5]?.id,
+      ],
+      pricePerSeat: 95.0,
+      totalSeats: 80,
+      takenSeats: [],
+      seatsPerRow: 10,
+      status: 'PUBLISHED',
+      imageUrl: 'https://images.unsplash.com/photo-1510812431401-41d2bd2722f3',
+      organizerName: 'Wine Enthusiast Events',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    },
+    {
+      id: uuidv4(),
+      title: 'Shakespeare in the Park',
+      description:
+        "Experience the magic of Shakespeare performed outdoors under the stars. This season's production: A Midsummer Night's Dream.",
+      date: getFutureDate(22),
+      location: 'Central Park, New York, NY',
+      venue: 'Delacorte Theater',
+      categoryIds: [
+        categories.find((c) => c.name === 'Theater')?.id || categories[2]?.id,
+      ],
+      pricePerSeat: 0.0,
+      totalSeats: 1800,
+      takenSeats: [],
+      seatsPerRow: 20,
+      status: 'PUBLISHED',
+      imageUrl: 'https://images.unsplash.com/photo-1516307365426-bea591f05011',
+      organizerName: 'Public Theater',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    },
   ];
 
   for (const event of events) {
@@ -379,91 +548,72 @@ const seedEvents = async (categories) => {
 };
 
 /**
- * Seed Tickets table with some sample tickets
- * Note: These are just sample tickets without real user data
- */
-const seedTickets = async (events) => {
-  console.log('\n🎫 Seeding Tickets...');
-
-  if (FORCE_RESEED) {
-    await clearTable('Tickets');
-  } else if (!(await isTableEmpty('Tickets'))) {
-    console.log('Tickets table already has data. Skipping...');
-    return [];
-  }
-
-  // Create a few sample tickets for demonstration
-  // In production, these would be created when users purchase tickets
-  const tickets = [
-    {
-      ticketId: uuidv4(),
-      eventId: events[0]?.id, // Summer Music Festival
-      userId: 'sample-user-1', // This would be a real Cognito user ID
-      name: 'Sample User',
-      email: 'sample@example.com',
-      phone: '+1234567890',
-      purchaseDate: new Date().toISOString(),
-      pricePerSeat: 150.0,
-      takenSeats: [1, 2],
-      status: 'confirmed',
-      createdAt: new Date().toISOString(),
-    },
-    {
-      ticketId: uuidv4(),
-      eventId: events[2]?.id, // Hamilton
-      userId: 'sample-user-2',
-      name: 'Sample User 2',
-      email: 'sample2@example.com',
-      phone: '+1234567891',
-      purchaseDate: new Date().toISOString(),
-      pricePerSeat: 180.0,
-      takenSeats: [5],
-      status: 'confirmed',
-      createdAt: new Date().toISOString(),
-    },
-  ];
-
-  for (const ticket of tickets) {
-    await insertItem('Tickets', ticket);
-  }
-
-  return tickets;
-};
-
-/**
  * Main seed function
  */
 const seedDatabase = async () => {
-  console.log('🌱 Starting database seeding...\n');
+  console.log('Starting database seeding...\n');
   if (FORCE_RESEED) {
-    console.log('⚠️  FORCE MODE: Clearing existing data before seeding\n');
+    console.log('FORCE MODE: Clearing existing data before seeding\n');
   }
   console.log('='.repeat(50));
 
   try {
-    // Seed in order: Categories -> Events -> Tickets
+    // Seed in order: Categories -> Events
     const categories = await seedCategories();
     const events = await seedEvents(categories);
-    const tickets = await seedTickets(events);
+
+    // Clear Tickets table in force mode
+    if (FORCE_RESEED) {
+      await clearTable('Tickets');
+      console.log('\nCleaning up ticket references from Users table...');
+      try {
+        const usersResult = await dynamoDb.send(
+          new ScanCommand({
+            TableName: 'Users',
+          })
+        );
+
+        if (usersResult.Items && usersResult.Items.length > 0) {
+          for (const user of usersResult.Items) {
+            // Remove tickets field if it exists
+            if (user.tickets || user.ticketIds) {
+              await dynamoDb.send(
+                new PutCommand({
+                  TableName: 'Users',
+                  Item: {
+                    ...user,
+                    tickets: undefined,
+                    ticketIds: undefined,
+                  },
+                })
+              );
+            }
+          }
+          console.log('   Cleaned up ticket references from Users table');
+        }
+      } catch (error) {
+        console.error('   Error cleaning Users table:', error.message);
+      }
+    }
 
     console.log('\n' + '='.repeat(50));
-    console.log('✅ Database seeding completed successfully!');
-    console.log('\n📊 Summary:');
+    console.log('Database seeding completed successfully!');
+    console.log('\nSummary:');
     console.log(`   Categories: ${categories.length} items`);
     console.log(`   Events: ${events.length} items`);
-    console.log(`   Tickets: ${tickets.length} sample items`);
     console.log(
-      '\n💡 Note: User data is created through Cognito registration.'
+      '\nNote: Tickets are created through the booking system when users purchase tickets.'
     );
+    console.log('Note: User data is created through Cognito registration.');
     if (!FORCE_RESEED && (categories.length === 0 || events.length === 0)) {
       console.log(
-        '\n💡 Tip: Use --force flag to clear and re-seed existing data:'
+        '\nTip: Use --force flag to clear and re-seed existing data:'
       );
       console.log('   bun seed --force');
     }
     console.log('='.repeat(50));
   } catch (error) {
-    console.error('\n❌ Error seeding database:', error);
+    console.error('\nError seeding database:', error);
     throw error;
   }
 };
@@ -472,11 +622,11 @@ const seedDatabase = async () => {
 if (require.main === module) {
   seedDatabase()
     .then(() => {
-      console.log('\n✨ All done!');
+      console.log('\nAll done!');
       process.exit(0);
     })
     .catch((error) => {
-      console.error('\n💥 Seeding failed:', error);
+      console.error('\nSeeding failed:', error);
       process.exit(1);
     });
 }
