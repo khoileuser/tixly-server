@@ -3,6 +3,12 @@ const {
   DescribeTableCommand,
   ResourceNotFoundException,
 } = require('@aws-sdk/client-dynamodb');
+const {
+  UserModel,
+  EventModel,
+  BookingModel,
+  CategoryModel,
+} = require('../models');
 
 /**
  * Initialize DynamoDB tables for the ticketing platform
@@ -14,133 +20,19 @@ const initializeTables = async (dynamoClient) => {
   const tables = [
     {
       name: 'Users',
-      schema: {
-        TableName: 'Users',
-        KeySchema: [{ AttributeName: 'cognitoId', KeyType: 'HASH' }],
-        AttributeDefinitions: [
-          { AttributeName: 'cognitoId', AttributeType: 'S' },
-          { AttributeName: 'email', AttributeType: 'S' },
-          { AttributeName: 'username', AttributeType: 'S' },
-        ],
-        GlobalSecondaryIndexes: [
-          {
-            IndexName: 'EmailIndex',
-            KeySchema: [{ AttributeName: 'email', KeyType: 'HASH' }],
-            Projection: { ProjectionType: 'ALL' },
-            ProvisionedThroughput: {
-              ReadCapacityUnits: 5,
-              WriteCapacityUnits: 5,
-            },
-          },
-          {
-            IndexName: 'UsernameIndex',
-            KeySchema: [{ AttributeName: 'username', KeyType: 'HASH' }],
-            Projection: { ProjectionType: 'ALL' },
-            ProvisionedThroughput: {
-              ReadCapacityUnits: 5,
-              WriteCapacityUnits: 5,
-            },
-          },
-        ],
-        ProvisionedThroughput: {
-          ReadCapacityUnits: 5,
-          WriteCapacityUnits: 5,
-        },
-      },
+      schema: UserModel.tableSchema,
     },
     {
       name: 'Events',
-      schema: {
-        TableName: 'Events',
-        KeySchema: [{ AttributeName: 'id', KeyType: 'HASH' }],
-        AttributeDefinitions: [
-          { AttributeName: 'id', AttributeType: 'S' },
-          { AttributeName: 'date', AttributeType: 'S' },
-          { AttributeName: 'status', AttributeType: 'S' },
-        ],
-        GlobalSecondaryIndexes: [
-          {
-            IndexName: 'DateIndex',
-            KeySchema: [{ AttributeName: 'date', KeyType: 'HASH' }],
-            Projection: { ProjectionType: 'ALL' },
-            ProvisionedThroughput: {
-              ReadCapacityUnits: 5,
-              WriteCapacityUnits: 5,
-            },
-          },
-          {
-            IndexName: 'StatusIndex',
-            KeySchema: [{ AttributeName: 'status', KeyType: 'HASH' }],
-            Projection: { ProjectionType: 'ALL' },
-            ProvisionedThroughput: {
-              ReadCapacityUnits: 5,
-              WriteCapacityUnits: 5,
-            },
-          },
-        ],
-        ProvisionedThroughput: {
-          ReadCapacityUnits: 5,
-          WriteCapacityUnits: 5,
-        },
-      },
-    },
-    {
-      name: 'Categories',
-      schema: {
-        TableName: 'Categories',
-        KeySchema: [{ AttributeName: 'id', KeyType: 'HASH' }],
-        AttributeDefinitions: [{ AttributeName: 'id', AttributeType: 'S' }],
-        ProvisionedThroughput: {
-          ReadCapacityUnits: 5,
-          WriteCapacityUnits: 5,
-        },
-      },
+      schema: EventModel.tableSchema,
     },
     {
       name: 'Tickets',
-      schema: {
-        TableName: 'Tickets',
-        KeySchema: [{ AttributeName: 'id', KeyType: 'HASH' }],
-        AttributeDefinitions: [
-          { AttributeName: 'id', AttributeType: 'S' },
-          { AttributeName: 'eventId', AttributeType: 'S' },
-          { AttributeName: 'userId', AttributeType: 'S' },
-          { AttributeName: 'status', AttributeType: 'S' },
-        ],
-        GlobalSecondaryIndexes: [
-          {
-            IndexName: 'EventIdIndex',
-            KeySchema: [{ AttributeName: 'eventId', KeyType: 'HASH' }],
-            Projection: { ProjectionType: 'ALL' },
-            ProvisionedThroughput: {
-              ReadCapacityUnits: 5,
-              WriteCapacityUnits: 5,
-            },
-          },
-          {
-            IndexName: 'UserIdIndex',
-            KeySchema: [{ AttributeName: 'userId', KeyType: 'HASH' }],
-            Projection: { ProjectionType: 'ALL' },
-            ProvisionedThroughput: {
-              ReadCapacityUnits: 5,
-              WriteCapacityUnits: 5,
-            },
-          },
-          {
-            IndexName: 'StatusIndex',
-            KeySchema: [{ AttributeName: 'status', KeyType: 'HASH' }],
-            Projection: { ProjectionType: 'ALL' },
-            ProvisionedThroughput: {
-              ReadCapacityUnits: 5,
-              WriteCapacityUnits: 5,
-            },
-          },
-        ],
-        ProvisionedThroughput: {
-          ReadCapacityUnits: 5,
-          WriteCapacityUnits: 5,
-        },
-      },
+      schema: BookingModel.tableSchema,
+    },
+    {
+      name: 'Categories',
+      schema: CategoryModel.tableSchema,
     },
   ];
 

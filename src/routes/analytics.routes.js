@@ -53,18 +53,9 @@ router.get('/', authenticate, async (req, res) => {
     );
     const tickets = ticketsResult.Items || [];
 
-    console.log('Total tickets found:', tickets.length);
-    console.log(
-      'Sample ticket statuses:',
-      tickets.slice(0, 5).map((t) => ({ id: t.id, status: t.status }))
-    );
-
     // Calculate statistics
     const confirmedTickets = tickets.filter((t) => t.status === 'CONFIRMED');
     const pendingTickets = tickets.filter((t) => t.status === 'PENDING');
-
-    console.log('Confirmed tickets:', confirmedTickets.length);
-    console.log('Pending tickets:', pendingTickets.length);
 
     const totalTicketsSold = confirmedTickets.length;
     const totalRevenue = confirmedTickets.reduce(

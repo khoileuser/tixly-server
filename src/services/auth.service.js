@@ -18,6 +18,7 @@ const {
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const env = require('../config/env');
+const { UserModel } = require('../models');
 
 const cognitoClient = new CognitoIdentityProviderClient({
   region: env.aws.region,
@@ -72,22 +73,28 @@ const register = async (userData, dynamoClient) => {
     const cognitoResponse = await cognitoClient.send(signUpCommand);
     const cognitoId = cognitoResponse.UserSub; // This is the Cognito sub
 
-    // Step 2: Create user record in DynamoDB
-    const userItem = {
+    // Step 2: Create user record in DynamoDB using model
+    const userToCreate = {
       cognitoId,
       username,
       email,
-      name,
-      phoneNumber: phoneNumber || null,
+      firstName: name,
+      phoneNumber: phoneNumber || undefined,
       role: 'user',
-      tickets: [],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
     };
+
+    // Validate user data
+    const validatedUser = UserModel.validate(userToCreate);
+
+    // Prepare for creation (adds timestamps)
+    const userItem = UserModel.prepareForCreation({
+      ...validatedUser,
+      tickets: [], // Legacy field
+    });
 
     await dynamoClient.send(
       new PutCommand({
-        TableName: 'Users',
+        TableName: UserModel.tableName,
         Item: userItem,
         ConditionExpression: 'attribute_not_exists(cognitoId)',
       })
@@ -160,16 +167,19 @@ const login = async (username, password, dynamoClient) => {
     // Sync role to DynamoDB if dynamoClient is provided
     if (dynamoClient) {
       try {
+        const updateData = UserModel.prepareForUpdate({ role: roleFromGroups });
+
         await dynamoClient.send(
           new UpdateCommand({
-            TableName: 'Users',
+            TableName: UserModel.tableName,
             Key: { cognitoId: decodedToken.sub },
-            UpdateExpression: 'SET #role = :role',
+            UpdateExpression: 'SET #role = :role, updatedAt = :updatedAt',
             ExpressionAttributeNames: {
               '#role': 'role',
             },
             ExpressionAttributeValues: {
               ':role': roleFromGroups,
+              ':updatedAt': updateData.updatedAt,
             },
           })
         );
@@ -385,7 +395,7 @@ const getUserProfile = async (cognitoId, dynamoClient) => {
   try {
     const result = await dynamoClient.send(
       new GetCommand({
-        TableName: 'Users',
+        TableName: UserModel.tableName,
         Key: { cognitoId },
       })
     );

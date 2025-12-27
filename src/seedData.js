@@ -406,7 +406,7 @@ const seedEvents = async (categories) => {
       takenSeats: [],
       seatsPerRow: 20,
       status: 'PUBLISHED',
-      imageUrl: 'https://images.unsplash.com/photo-1577083552431-6e5fd01988ec',
+      imageUrl: 'https://images.unsplash.com/photo-1536924940846-227afb31e2a5',
       organizerName: 'MoMA',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
