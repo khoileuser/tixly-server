@@ -29,10 +29,24 @@ router.post('/bookings', authenticate, async (req, res) => {
     const { eventId, seats, pricePerSeat, name, email, phone } = req.body;
     const userId = req.user.cognitoId; // From authenticated user
 
+    console.log('Creating booking for user:', userId);
+    console.log('Request body:', {
+      eventId,
+      seats: seats?.length,
+      pricePerSeat,
+    });
+
     if (!eventId || !seats || !Array.isArray(seats) || seats.length === 0) {
       return res.status(400).json({
         success: false,
         message: 'Event ID and seats are required',
+      });
+    }
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'User authentication required',
       });
     }
 

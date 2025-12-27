@@ -44,6 +44,22 @@ const initDynamoDB = () => {
 // Create a booking (ticket with PENDING status)
 const createBooking = async (bookingData) => {
   const db = initDynamoDB();
+
+  // Validate required fields
+  if (!bookingData.eventId) {
+    throw new Error('Event ID is required');
+  }
+  if (!bookingData.userId) {
+    throw new Error('User ID is required');
+  }
+  if (
+    !bookingData.seats ||
+    !Array.isArray(bookingData.seats) ||
+    bookingData.seats.length === 0
+  ) {
+    throw new Error('Seats are required');
+  }
+
   const bookingId = uuidv4();
   const now = new Date().toISOString();
   const expiresAt = new Date(
@@ -51,7 +67,7 @@ const createBooking = async (bookingData) => {
   ).toISOString();
 
   const booking = {
-    ticketId: bookingId,
+    id: bookingId, // Primary key for DynamoDB
     eventId: bookingData.eventId,
     userId: bookingData.userId,
     takenSeats: bookingData.seats, // Array of seat IDs
@@ -67,13 +83,25 @@ const createBooking = async (bookingData) => {
     phone: bookingData.phone || '',
   };
 
+  console.log('Creating booking in DynamoDB:', {
+    id: booking.id,
+    eventId: booking.eventId,
+    userId: booking.userId,
+    seatsCount: booking.takenSeats.length,
+  });
+
   const params = {
     TableName: 'Tickets',
     Item: booking,
   };
 
-  await db.send(new PutCommand(params));
-  return booking;
+  try {
+    await db.send(new PutCommand(params));
+    return booking;
+  } catch (error) {
+    console.error('DynamoDB PutCommand error:', error);
+    throw error;
+  }
 };
 
 // Get booking by ID
@@ -82,7 +110,7 @@ const getBookingById = async (ticketId) => {
 
   const params = {
     TableName: 'Tickets',
-    Key: { ticketId },
+    Key: { id: ticketId }, // Use 'id' as the primary key
   };
 
   const result = await db.send(new GetCommand(params));
@@ -103,7 +131,7 @@ const confirmBooking = async (ticketId, paymentInfo) => {
   // Update ticket status to CONFIRMED
   const ticketParams = {
     TableName: 'Tickets',
-    Key: { ticketId },
+    Key: { id: ticketId }, // Use 'id' as the primary key
     UpdateExpression:
       'SET #status = :status, updatedAt = :updatedAt, paymentInfo = :paymentInfo, confirmedAt = :confirmedAt',
     ExpressionAttributeNames: {
@@ -148,7 +176,7 @@ const updateCustomerInfo = async (ticketId, customerInfo) => {
 
   const params = {
     TableName: 'Tickets',
-    Key: { ticketId },
+    Key: { id: ticketId }, // Use 'id' as the primary key
     UpdateExpression:
       'SET #name = :name, email = :email, phone = :phone, updatedAt = :updatedAt',
     ExpressionAttributeNames: {
@@ -211,7 +239,7 @@ const cancelBooking = async (ticketId) => {
   // Delete the ticket
   const params = {
     TableName: 'Tickets',
-    Key: { ticketId },
+    Key: { id: ticketId }, // Use 'id' as the primary key
   };
 
   await db.send(new DeleteCommand(params));
@@ -281,7 +309,7 @@ const cleanupExpiredBookings = async () => {
     db.send(
       new DeleteCommand({
         TableName: 'Tickets',
-        Key: { ticketId: ticket.ticketId },
+        Key: { id: ticket.id }, // Use 'id' as the primary key
       })
     )
   );
@@ -290,20 +318,55 @@ const cleanupExpiredBookings = async () => {
   return { deleted: result.Items.length };
 };
 
-// Get user's bookings
+// Get user's bookings with event details
 const getUserBookings = async (userId) => {
   const db = initDynamoDB();
 
+  // Use UserIdIndex for better performance
   const params = {
     TableName: 'Tickets',
-    FilterExpression: 'userId = :userId',
+    IndexName: 'UserIdIndex',
+    KeyConditionExpression: 'userId = :userId',
     ExpressionAttributeValues: {
       ':userId': userId,
     },
   };
 
-  const result = await db.send(new ScanCommand(params));
-  return result.Items || [];
+  const result = await db.send(new QueryCommand(params));
+  const tickets = result.Items || [];
+
+  // Fetch event details for each ticket
+  const ticketsWithEvents = await Promise.all(
+    tickets.map(async (ticket) => {
+      try {
+        const eventResult = await db.send(
+          new GetCommand({
+            TableName: 'Events',
+            Key: { id: ticket.eventId },
+          })
+        );
+
+        return {
+          ...ticket,
+          event: eventResult.Item || null,
+        };
+      } catch (error) {
+        console.error(`Error fetching event ${ticket.eventId}:`, error);
+        return {
+          ...ticket,
+          event: null,
+        };
+      }
+    })
+  );
+
+  // Sort by purchase date, newest first
+  return ticketsWithEvents.sort((a, b) => {
+    return (
+      new Date(b.purchaseDate || b.createdAt) -
+      new Date(a.purchaseDate || a.createdAt)
+    );
+  });
 };
 
 module.exports = {
