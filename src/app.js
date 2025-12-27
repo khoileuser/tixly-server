@@ -7,6 +7,7 @@ const routes = require('./routes');
 const initializeTables = require('./config/initDB');
 const eventService = require('./services/event.service');
 const bookingService = require('./services/booking.service');
+const categoryService = require('./services/category.service');
 const { startCleanupScheduler } = require('./jobs/cleanupBookings');
 
 const app = express();
@@ -28,6 +29,14 @@ eventService.initDynamoDB({
 
 // Initialize booking service with DynamoDB client
 bookingService.initDynamoDB();
+
+// Initialize category service with DynamoDB client
+categoryService.initDynamoDB({
+  region: env.aws.region || 'us-east-1',
+  endpoint: env.aws.dynamodbEndpoint,
+  accessKeyId: env.aws.awsAccessKeyId,
+  secretAccessKey: env.aws.awsSecretAccessKey,
+});
 
 // Initialize DynamoDB tables on startup
 const startServer = async () => {
