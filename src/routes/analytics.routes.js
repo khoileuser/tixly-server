@@ -53,49 +53,73 @@ router.get('/', authenticate, async (req, res) => {
     );
     const tickets = ticketsResult.Items || [];
 
-    console.log('Total tickets found:', tickets.length);
-    console.log(
-      'Sample ticket statuses:',
-      tickets.slice(0, 5).map((t) => ({ id: t.id, status: t.status }))
-    );
-
     // Calculate statistics
     const confirmedTickets = tickets.filter((t) => t.status === 'CONFIRMED');
     const pendingTickets = tickets.filter((t) => t.status === 'PENDING');
 
-    console.log('Confirmed tickets:', confirmedTickets.length);
-    console.log('Pending tickets:', pendingTickets.length);
-
     const totalTicketsSold = confirmedTickets.length;
-    const totalRevenue = confirmedTickets.reduce(
-      (sum, ticket) =>
-        sum +
-        (ticket.totalPrice ||
-          ticket.pricePerSeat * (ticket.takenSeats?.length || 0)),
-      0
-    );
+    const totalRevenue = confirmedTickets.reduce((sum, ticket) => {
+      const ticketRevenue =
+        ticket.pricePerSeat * (ticket.takenSeats?.length || 0);
+      return sum + ticketRevenue;
+    }, 0);
     const pendingBookings = pendingTickets.length;
+    const averageOrderValue =
+      totalTicketsSold > 0 ? totalRevenue / totalTicketsSold : 0;
 
-    // Get recent activity (last 10 bookings)
+    // Get recent activity (last 10 bookings/transactions)
+    // Sort by the most recent action (created, confirmed, or refunded)
     const recentTickets = tickets
-      .sort((a, b) => {
-        const dateA = new Date(a.createdAt || 0).getTime();
-        const dateB = new Date(b.createdAt || 0).getTime();
-        return dateB - dateA;
+      .map((ticket) => {
+        // Determine the most recent timestamp for this ticket
+        const timestamps = [
+          new Date(ticket.createdAt || 0).getTime(),
+          new Date(ticket.updatedAt || 0).getTime(),
+        ];
+        if (ticket.refundedAt) {
+          timestamps.push(new Date(ticket.refundedAt).getTime());
+        }
+        return {
+          ...ticket,
+          mostRecentTimestamp: Math.max(...timestamps),
+        };
       })
+      .sort((a, b) => b.mostRecentTimestamp - a.mostRecentTimestamp)
       .slice(0, 10);
 
-    const recentActivity = recentTickets.map((ticket) => ({
-      type:
-        ticket.status === 'CONFIRMED' ? 'Ticket Purchased' : 'Booking Created',
-      description: `${ticket.name || 'User'} ${
-        ticket.status === 'CONFIRMED' ? 'purchased' : 'created booking for'
-      } ${ticket.takenSeats?.length || 0} seat(s) - $${
-        ticket.totalPrice ||
+    const recentActivity = recentTickets.map((ticket) => {
+      const ticketValue = (
         ticket.pricePerSeat * (ticket.takenSeats?.length || 0)
-      }`,
-      timestamp: ticket.createdAt || new Date().toISOString(),
-    }));
+      ).toFixed(2);
+
+      // Determine activity type and description based on status
+      if (ticket.status === 'REFUNDED') {
+        return {
+          type: 'Ticket Refunded',
+          description: `${ticket.name || 'User'} refunded ${
+            ticket.takenSeats?.length || 0
+          } seat(s) - $${ticketValue}`,
+          timestamp: ticket.refundedAt || ticket.updatedAt || ticket.createdAt,
+        };
+      } else if (ticket.status === 'CONFIRMED') {
+        return {
+          type: 'Ticket Purchased',
+          description: `${ticket.name || 'User'} purchased ${
+            ticket.takenSeats?.length || 0
+          } seat(s) - $${ticketValue}`,
+          timestamp:
+            ticket.purchaseDate || ticket.updatedAt || ticket.createdAt,
+        };
+      } else {
+        return {
+          type: 'Booking Created',
+          description: `${ticket.name || 'User'} created booking for ${
+            ticket.takenSeats?.length || 0
+          } seat(s) - $${ticketValue}`,
+          timestamp: ticket.createdAt,
+        };
+      }
+    });
 
     res.status(200).json({
       success: true,
@@ -105,6 +129,7 @@ router.get('/', authenticate, async (req, res) => {
         totalTicketsSold,
         totalRevenue,
         pendingBookings,
+        averageOrderValue,
         recentActivity,
       },
     });

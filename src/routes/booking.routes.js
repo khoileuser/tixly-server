@@ -26,15 +26,8 @@ router.get('/events/:eventId/seats', async (req, res) => {
 // Create a booking (requires auth)
 router.post('/bookings', authenticate, async (req, res) => {
   try {
-    const { eventId, seats, pricePerSeat, name, email, phone } = req.body;
+    const { eventId, seats, pricePerSeat, name, email, phoneNumber } = req.body;
     const userId = req.user.cognitoId; // From authenticated user
-
-    console.log('Creating booking for user:', userId);
-    console.log('Request body:', {
-      eventId,
-      seats: seats?.length,
-      pricePerSeat,
-    });
 
     if (!eventId || !seats || !Array.isArray(seats) || seats.length === 0) {
       return res.status(400).json({
@@ -69,7 +62,7 @@ router.post('/bookings', authenticate, async (req, res) => {
       pricePerSeat,
       name,
       email,
-      phone,
+      phoneNumber,
     };
 
     const booking = await bookingService.createBooking(bookingData);
@@ -200,9 +193,9 @@ router.put(
   async (req, res) => {
     try {
       const { ticketId } = req.params;
-      const { name, email, phone } = req.body;
+      const { name, email, phoneNumber } = req.body;
 
-      if (!name || !email || !phone) {
+      if (!name || !email || !phoneNumber) {
         return res.status(400).json({
           success: false,
           message: 'All customer fields are required',
@@ -230,7 +223,7 @@ router.put(
       const updatedBooking = await bookingService.updateCustomerInfo(ticketId, {
         name,
         email,
-        phone,
+        phoneNumber,
       });
 
       res.json({
@@ -284,6 +277,45 @@ router.delete('/bookings/:ticketId', authenticate, async (req, res) => {
       success: false,
       message: 'Failed to cancel booking',
       error: error.message,
+    });
+  }
+});
+
+// Refund booking (requires auth)
+router.post('/bookings/:ticketId/refund', authenticate, async (req, res) => {
+  try {
+    const { ticketId } = req.params;
+
+    // Get booking first
+    const booking = await bookingService.getBookingById(ticketId);
+
+    if (!booking) {
+      return res.status(404).json({
+        success: false,
+        message: 'Booking not found',
+      });
+    }
+
+    // Check if user owns this booking
+    if (booking.userId !== req.user.cognitoId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Unauthorized access to booking',
+      });
+    }
+
+    const result = await bookingService.refundBooking(ticketId);
+
+    res.json({
+      success: true,
+      message: 'Booking refunded successfully',
+      data: result.data,
+    });
+  } catch (error) {
+    console.error('Error refunding booking:', error);
+    res.status(400).json({
+      success: false,
+      message: error.message || 'Failed to refund booking',
     });
   }
 });

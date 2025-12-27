@@ -9,8 +9,8 @@ const {
   ScanCommand,
 } = require('@aws-sdk/lib-dynamodb');
 const { NodeHttpHandler } = require('@smithy/node-http-handler');
-const { v4: uuidv4 } = require('uuid');
 const env = require('../config/env');
+const { BookingModel, EventModel } = require('../models');
 
 let dynamoDb = null;
 
@@ -45,61 +45,38 @@ const initDynamoDB = () => {
 const createBooking = async (bookingData) => {
   const db = initDynamoDB();
 
-  // Validate required fields
-  if (!bookingData.eventId) {
-    throw new Error('Event ID is required');
-  }
-  if (!bookingData.userId) {
-    throw new Error('User ID is required');
-  }
-  if (
-    !bookingData.seats ||
-    !Array.isArray(bookingData.seats) ||
-    bookingData.seats.length === 0
-  ) {
-    throw new Error('Seats are required');
-  }
-
-  const bookingId = uuidv4();
-  const now = new Date().toISOString();
-  const expiresAt = new Date(
-    Date.now() + env.bookingTimeoutMinutes * 60 * 1000
-  ).toISOString();
-
-  const booking = {
-    id: bookingId, // Primary key for DynamoDB
-    eventId: bookingData.eventId,
-    userId: bookingData.userId,
-    takenSeats: bookingData.seats, // Array of seat IDs
-    status: 'PENDING',
-    pricePerSeat: bookingData.pricePerSeat,
-    purchaseDate: now,
-    createdAt: now,
-    updatedAt: now,
-    expiresAt: expiresAt,
-    // User info fields (can be updated later)
-    name: bookingData.name || '',
-    email: bookingData.email || '',
-    phone: bookingData.phone || '',
-  };
-
-  console.log('Creating booking in DynamoDB:', {
-    id: booking.id,
-    eventId: booking.eventId,
-    userId: booking.userId,
-    seatsCount: booking.takenSeats.length,
-  });
-
-  const params = {
-    TableName: 'Tickets',
-    Item: booking,
-  };
-
   try {
+    // Prepare booking data with validation
+    const bookingToCreate = {
+      eventId: bookingData.eventId,
+      pricePerSeat: bookingData.pricePerSeat || 0,
+      takenSeats: bookingData.seats, // Array of seat identifiers
+      userId: bookingData.userId,
+      name: bookingData.name || '',
+      email: bookingData.email || '',
+      phoneNumber: bookingData.phoneNumber || '',
+      status: 'PENDING',
+      purchaseDate: new Date().toISOString(),
+    };
+
+    // Validate using model
+    const validatedBooking = BookingModel.validate(bookingToCreate);
+
+    // Prepare for creation (adds id, bookingCode, timestamps, expiration)
+    const booking = BookingModel.prepareForCreation(validatedBooking);
+
+    const params = {
+      TableName: BookingModel.tableName,
+      Item: booking,
+    };
+
     await db.send(new PutCommand(params));
     return booking;
   } catch (error) {
-    console.error('DynamoDB PutCommand error:', error);
+    console.error('Booking creation error:', error);
+    if (error.message.includes('Validation failed')) {
+      throw new Error(`Invalid booking data: ${error.message}`);
+    }
     throw error;
   }
 };
@@ -109,8 +86,8 @@ const getBookingById = async (ticketId) => {
   const db = initDynamoDB();
 
   const params = {
-    TableName: 'Tickets',
-    Key: { id: ticketId }, // Use 'id' as the primary key
+    TableName: BookingModel.tableName,
+    Key: { id: ticketId },
   };
 
   const result = await db.send(new GetCommand(params));
@@ -120,42 +97,52 @@ const getBookingById = async (ticketId) => {
 // Update booking payment info and confirm
 const confirmBooking = async (ticketId, paymentInfo) => {
   const db = initDynamoDB();
-  const now = new Date().toISOString();
 
-  // Get the booking first to get event and seats info
+  // Get the booking first to validate and get event info
   const booking = await getBookingById(ticketId);
   if (!booking) {
     throw new Error('Booking not found');
   }
 
+  // Check if booking can be confirmed using model helper
+  if (!BookingModel.canBeConfirmed(booking)) {
+    throw new Error(
+      'Booking cannot be confirmed (either not pending or expired)'
+    );
+  }
+
+  // Prepare confirmation data using model
+  const confirmationData = BookingModel.prepareForConfirmation(booking);
+
   // Update ticket status to CONFIRMED
   const ticketParams = {
-    TableName: 'Tickets',
-    Key: { id: ticketId }, // Use 'id' as the primary key
+    TableName: BookingModel.tableName,
+    Key: { id: ticketId },
     UpdateExpression:
-      'SET #status = :status, updatedAt = :updatedAt, paymentInfo = :paymentInfo, confirmedAt = :confirmedAt',
+      'SET #status = :status, updatedAt = :updatedAt, paymentInfo = :paymentInfo, purchaseDate = :purchaseDate, expiresAt = :expiresAt',
     ExpressionAttributeNames: {
       '#status': 'status',
     },
     ExpressionAttributeValues: {
-      ':status': 'CONFIRMED',
-      ':updatedAt': now,
+      ':status': confirmationData.status,
+      ':updatedAt': confirmationData.updatedAt,
+      ':purchaseDate': confirmationData.purchaseDate,
+      ':expiresAt': null,
       ':paymentInfo': paymentInfo,
-      ':confirmedAt': now,
     },
     ReturnValues: 'ALL_NEW',
   };
 
   // Update event's takenSeats array
   const eventParams = {
-    TableName: 'Events',
+    TableName: EventModel.tableName,
     Key: { id: booking.eventId },
     UpdateExpression:
       'SET takenSeats = list_append(if_not_exists(takenSeats, :emptyList), :seats), updatedAt = :updatedAt',
     ExpressionAttributeValues: {
       ':seats': booking.takenSeats,
       ':emptyList': [],
-      ':updatedAt': now,
+      ':updatedAt': confirmationData.updatedAt,
     },
   };
 
@@ -172,21 +159,27 @@ const confirmBooking = async (ticketId, paymentInfo) => {
 // Update customer info on ticket
 const updateCustomerInfo = async (ticketId, customerInfo) => {
   const db = initDynamoDB();
-  const now = new Date().toISOString();
+
+  // Prepare update data with model
+  const updateData = BookingModel.prepareForUpdate({
+    name: customerInfo.name,
+    email: customerInfo.email,
+    phoneNumber: customerInfo.phoneNumber,
+  });
 
   const params = {
-    TableName: 'Tickets',
-    Key: { id: ticketId }, // Use 'id' as the primary key
+    TableName: BookingModel.tableName,
+    Key: { id: ticketId },
     UpdateExpression:
-      'SET #name = :name, email = :email, phone = :phone, updatedAt = :updatedAt',
+      'SET #name = :name, email = :email, phoneNumber = :phoneNumber, updatedAt = :updatedAt',
     ExpressionAttributeNames: {
       '#name': 'name',
     },
     ExpressionAttributeValues: {
       ':name': customerInfo.name,
       ':email': customerInfo.email,
-      ':phone': customerInfo.phone,
-      ':updatedAt': now,
+      ':phoneNumber': customerInfo.phoneNumber,
+      ':updatedAt': updateData.updatedAt,
     },
     ReturnValues: 'ALL_NEW',
   };
@@ -205,12 +198,17 @@ const cancelBooking = async (ticketId) => {
     throw new Error('Booking not found');
   }
 
+  // Check if booking can be cancelled using model helper
+  if (!BookingModel.canBeCancelled(booking)) {
+    throw new Error('Booking cannot be cancelled');
+  }
+
   // Only remove seats from event if booking was CONFIRMED
   if (booking.status === 'CONFIRMED') {
     // Get current event data
     const eventResult = await db.send(
       new GetCommand({
-        TableName: 'Events',
+        TableName: EventModel.tableName,
         Key: { id: booking.eventId },
       })
     );
@@ -221,15 +219,19 @@ const cancelBooking = async (ticketId) => {
         (seat) => !booking.takenSeats.includes(seat)
       );
 
-      // Update event's takenSeats array
+      // Update event's takenSeats array with model timestamp
+      const updateData = EventModel.prepareForUpdate({
+        takenSeats: updatedTakenSeats,
+      });
+
       await db.send(
         new UpdateCommand({
-          TableName: 'Events',
+          TableName: EventModel.tableName,
           Key: { id: booking.eventId },
           UpdateExpression: 'SET takenSeats = :seats, updatedAt = :updatedAt',
           ExpressionAttributeValues: {
             ':seats': updatedTakenSeats,
-            ':updatedAt': new Date().toISOString(),
+            ':updatedAt': updateData.updatedAt,
           },
         })
       );
@@ -238,8 +240,8 @@ const cancelBooking = async (ticketId) => {
 
   // Delete the ticket
   const params = {
-    TableName: 'Tickets',
-    Key: { id: ticketId }, // Use 'id' as the primary key
+    TableName: BookingModel.tableName,
+    Key: { id: ticketId },
   };
 
   await db.send(new DeleteCommand(params));
@@ -251,7 +253,7 @@ const getBookedSeats = async (eventId) => {
   const db = initDynamoDB();
 
   const params = {
-    TableName: 'Events',
+    TableName: EventModel.tableName,
     Key: { id: eventId },
   };
 
@@ -263,7 +265,7 @@ const getBookedSeats = async (eventId) => {
 
   // Also get pending bookings to include temporarily reserved seats
   const ticketsParams = {
-    TableName: 'Tickets',
+    TableName: BookingModel.tableName,
     FilterExpression: 'eventId = :eventId AND #status = :pending',
     ExpressionAttributeNames: {
       '#status': 'status',
@@ -291,7 +293,7 @@ const cleanupExpiredBookings = async () => {
   const now = new Date().toISOString();
 
   const params = {
-    TableName: 'Tickets',
+    TableName: BookingModel.tableName,
     FilterExpression: '#status = :pending AND expiresAt < :now',
     ExpressionAttributeNames: {
       '#status': 'status',
@@ -304,18 +306,23 @@ const cleanupExpiredBookings = async () => {
 
   const result = await db.send(new ScanCommand(params));
 
+  // Filter using model helper method for extra safety
+  const expiredBookings = result.Items.filter((booking) =>
+    BookingModel.isExpired(booking)
+  );
+
   // Delete expired bookings
-  const deletePromises = result.Items.map((ticket) =>
+  const deletePromises = expiredBookings.map((ticket) =>
     db.send(
       new DeleteCommand({
-        TableName: 'Tickets',
-        Key: { id: ticket.id }, // Use 'id' as the primary key
+        TableName: BookingModel.tableName,
+        Key: { id: ticket.id },
       })
     )
   );
 
   await Promise.all(deletePromises);
-  return { deleted: result.Items.length };
+  return { deleted: expiredBookings.length };
 };
 
 // Get user's bookings with event details
@@ -324,7 +331,7 @@ const getUserBookings = async (userId) => {
 
   // Use UserIdIndex for better performance
   const params = {
-    TableName: 'Tickets',
+    TableName: BookingModel.tableName,
     IndexName: 'UserIdIndex',
     KeyConditionExpression: 'userId = :userId',
     ExpressionAttributeValues: {
@@ -341,7 +348,7 @@ const getUserBookings = async (userId) => {
       try {
         const eventResult = await db.send(
           new GetCommand({
-            TableName: 'Events',
+            TableName: EventModel.tableName,
             Key: { id: ticket.eventId },
           })
         );
@@ -369,6 +376,84 @@ const getUserBookings = async (userId) => {
   });
 };
 
+// Refund a booking
+const refundBooking = async (ticketId) => {
+  const db = initDynamoDB();
+
+  // Get the booking first
+  const booking = await getBookingById(ticketId);
+
+  if (!booking) {
+    throw new Error('Booking not found');
+  }
+
+  // Check if booking can be refunded using model helper
+  if (!BookingModel.canBeRefunded(booking)) {
+    throw new Error(
+      'Booking cannot be refunded. Refunds are only available within 24 hours of purchase for confirmed bookings.'
+    );
+  }
+
+  // Prepare refund data
+  const refundData = BookingModel.prepareForRefund(booking);
+
+  // Update booking status
+  await db.send(
+    new UpdateCommand({
+      TableName: BookingModel.tableName,
+      Key: { id: ticketId },
+      UpdateExpression:
+        'SET #status = :status, refundedAt = :refundedAt, updatedAt = :updatedAt',
+      ExpressionAttributeNames: {
+        '#status': 'status',
+      },
+      ExpressionAttributeValues: {
+        ':status': refundData.status,
+        ':refundedAt': refundData.refundedAt,
+        ':updatedAt': refundData.updatedAt,
+      },
+    })
+  );
+
+  // Release seats from event
+  const eventResult = await db.send(
+    new GetCommand({
+      TableName: EventModel.tableName,
+      Key: { id: booking.eventId },
+    })
+  );
+
+  if (eventResult.Item) {
+    const event = eventResult.Item;
+    const updatedTakenSeats = (event.takenSeats || []).filter(
+      (seat) => !booking.takenSeats.includes(seat)
+    );
+
+    // Update event's takenSeats array
+    const updateData = EventModel.prepareForUpdate({
+      takenSeats: updatedTakenSeats,
+    });
+
+    await db.send(
+      new UpdateCommand({
+        TableName: EventModel.tableName,
+        Key: { id: booking.eventId },
+        UpdateExpression: 'SET takenSeats = :seats, updatedAt = :updatedAt',
+        ExpressionAttributeValues: {
+          ':seats': updatedTakenSeats,
+          ':updatedAt': updateData.updatedAt,
+        },
+      })
+    );
+  }
+
+  return {
+    success: true,
+    message: 'Booking refunded successfully',
+    data: { ...booking, ...refundData },
+  };
+};
+
 module.exports = {
   initDynamoDB,
   createBooking,
@@ -379,4 +464,5 @@ module.exports = {
   getBookedSeats,
   cleanupExpiredBookings,
   getUserBookings,
+  refundBooking,
 };
