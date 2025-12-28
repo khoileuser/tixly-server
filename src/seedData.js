@@ -5,8 +5,16 @@ const {
   ScanCommand,
   DeleteCommand,
 } = require('@aws-sdk/lib-dynamodb');
+const {
+  DeleteTableCommand,
+  CreateTableCommand,
+  DescribeTableCommand,
+  waitUntilTableExists,
+  waitUntilTableNotExists,
+} = require('@aws-sdk/client-dynamodb');
 const { v4: uuidv4 } = require('uuid');
 const { NodeHttpHandler } = require('@smithy/node-http-handler');
+const { EventModel } = require('./models');
 
 // Load environment variables
 require('dotenv').config();
@@ -95,6 +103,62 @@ const clearTable = async (tableName) => {
     console.log(`   Cleared ${response.Items.length} items from ${tableName}`);
   } catch (error) {
     console.error(`   Error clearing ${tableName}:`, error.message);
+  }
+};
+
+/**
+ * Delete and recreate the Events table with proper indexes
+ */
+const recreateEventsTable = async () => {
+  try {
+    console.log('\nRecreating Events table with StatusIndex...');
+
+    // Try to delete the table if it exists
+    try {
+      console.log('   Deleting existing Events table...');
+      await client.send(new DeleteTableCommand({ TableName: 'Events' }));
+
+      // Wait for table to be deleted
+      console.log('   Waiting for table deletion...');
+      await waitUntilTableNotExists(
+        {
+          client,
+          maxWaitTime: 60,
+          minDelay: 2,
+          maxDelay: 5,
+        },
+        { TableName: 'Events' }
+      );
+      console.log('   Table deleted successfully');
+    } catch (error) {
+      if (error.name === 'ResourceNotFoundException') {
+        console.log('   Table does not exist, will create new one');
+      } else {
+        throw error;
+      }
+    }
+
+    // Create the table with the proper schema including StatusIndex
+    console.log('   Creating Events table with StatusIndex...');
+    await client.send(new CreateTableCommand(EventModel.tableSchema));
+
+    // Wait for table to be active
+    console.log('   Waiting for table to become active...');
+    await waitUntilTableExists(
+      {
+        client,
+        maxWaitTime: 60,
+        minDelay: 2,
+        maxDelay: 5,
+      },
+      { TableName: 'Events' }
+    );
+
+    console.log('   Events table recreated successfully with StatusIndex!');
+    return true;
+  } catch (error) {
+    console.error('   Error recreating Events table:', error.message);
+    return false;
   }
 };
 
@@ -569,8 +633,18 @@ const seedDatabase = async () => {
   console.log('='.repeat(50));
 
   try {
+    // Recreate Events table with proper indexes
+    console.log('\nStep 1: Recreating Events table with StatusIndex...');
+    const tableRecreated = await recreateEventsTable();
+    if (!tableRecreated) {
+      throw new Error('Failed to recreate Events table');
+    }
+
     // Seed in order: Categories -> Events
+    console.log('\nStep 2: Seeding Categories...');
     const categories = await seedCategories();
+
+    console.log('\nStep 3: Seeding Events...');
     const events = await seedEvents(categories);
 
     // Clear Tickets table in force mode
@@ -610,6 +684,7 @@ const seedDatabase = async () => {
     console.log('\n' + '='.repeat(50));
     console.log('Database seeding completed successfully!');
     console.log('\nSummary:');
+    console.log(`   Events table recreated with StatusIndex`);
     console.log(`   Categories: ${categories.length} items`);
     console.log(`   Events: ${events.length} items`);
     console.log(

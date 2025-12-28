@@ -13,13 +13,16 @@
   "dependencies": {
     "@aws-sdk/client-cognito-identity-provider": "^3.958.0",
     "@aws-sdk/client-dynamodb": "^3.958.0",
+    "@aws-sdk/client-s3": "^3.958.0",
     "@aws-sdk/lib-dynamodb": "^3.958.0",
+    "@aws-sdk/s3-request-presigner": "^3.958.0",
     "@smithy/node-http-handler": "^4.4.7",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
     "joi": "^18.0.2",
     "jsonwebtoken": "^9.0.3",
+    "multer": "^1.4.5-lts.1",
     "uuid": "^11.0.3"
   },
   "devDependencies": {

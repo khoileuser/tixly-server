@@ -89,21 +89,21 @@ router.get('/trending', async (req, res) => {
 });
 
 /**
- * GET /api/v1/events/weekend
- * Get events happening this weekend
+ * GET /api/v1/events/this-week
+ * Get events happening this week
  */
-router.get('/weekend', async (req, res) => {
+router.get('/this-week', async (req, res) => {
   try {
     const { limit } = req.query;
-    const result = await eventService.getWeekendEvents(
+    const result = await eventService.getThisWeekEvents(
       limit ? parseInt(limit) : 20
     );
     res.json(result);
   } catch (error) {
-    console.error('Error in get weekend events:', error);
+    console.error('Error in get this week events:', error);
     res.status(500).json({
       success: false,
-      message: error.message || 'Failed to retrieve weekend events',
+      message: error.message || 'Failed to retrieve this week events',
     });
   }
 });

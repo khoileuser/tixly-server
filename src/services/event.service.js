@@ -4,9 +4,13 @@ const {
   GetCommand,
   QueryCommand,
   ScanCommand,
+  PutCommand,
+  UpdateCommand,
+  DeleteCommand,
 } = require('@aws-sdk/lib-dynamodb');
 const { NodeHttpHandler } = require('@smithy/node-http-handler');
 const { EventModel } = require('../models');
+const s3Service = require('./s3.service');
 
 let dynamoDb;
 
@@ -444,27 +448,25 @@ const getTrendingEvents = async (limit = 10) => {
 };
 
 /**
- * Get events happening this weekend (Friday to Sunday)
+ * Get events happening this week (Monday to Sunday)
  */
-const getWeekendEvents = async (limit = 20) => {
+const getThisWeekEvents = async (limit = 20) => {
   try {
     const now = new Date();
     const dayOfWeek = now.getDay(); // 0 = Sunday, 6 = Saturday
 
-    // Calculate start of this weekend (Friday 00:00)
-    let daysUntilFriday = 5 - dayOfWeek;
-    if (daysUntilFriday < 0) daysUntilFriday += 7;
-    if (dayOfWeek === 0) daysUntilFriday = -2; // If Sunday, go back to Friday
-    if (dayOfWeek === 6) daysUntilFriday = -1; // If Saturday, go back to Friday
+    // Calculate start of this week (Monday 00:00)
+    let daysUntilMonday = 1 - dayOfWeek;
+    if (daysUntilMonday > 0) daysUntilMonday -= 7; // If we're past Monday, go to last Monday
 
-    const weekendStart = new Date(now);
-    weekendStart.setDate(now.getDate() + daysUntilFriday);
-    weekendStart.setHours(0, 0, 0, 0);
+    const weekStart = new Date(now);
+    weekStart.setDate(now.getDate() + daysUntilMonday);
+    weekStart.setHours(0, 0, 0, 0);
 
-    // Calculate end of weekend (Sunday 23:59:59)
-    const weekendEnd = new Date(weekendStart);
-    weekendEnd.setDate(weekendStart.getDate() + 2);
-    weekendEnd.setHours(23, 59, 59, 999);
+    // Calculate end of week (Sunday 23:59:59)
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekStart.getDate() + 6);
+    weekEnd.setHours(23, 59, 59, 999);
 
     const command = new ScanCommand({
       TableName: EventModel.tableName,
@@ -475,8 +477,8 @@ const getWeekendEvents = async (limit = 20) => {
         '#status': 'status',
       },
       ExpressionAttributeValues: {
-        ':start': weekendStart.toISOString(),
-        ':end': weekendEnd.toISOString(),
+        ':start': weekStart.toISOString(),
+        ':end': weekEnd.toISOString(),
         ':published': 'PUBLISHED',
       },
     });
@@ -495,13 +497,13 @@ const getWeekendEvents = async (limit = 20) => {
       data: events,
       count: events.length,
       dateRange: {
-        start: weekendStart.toISOString(),
-        end: weekendEnd.toISOString(),
+        start: weekStart.toISOString(),
+        end: weekEnd.toISOString(),
       },
     };
   } catch (error) {
-    console.error('Error getting weekend events:', error);
-    throw new Error('Failed to retrieve weekend events');
+    console.error('Error getting this week events:', error);
+    throw new Error('Failed to retrieve this week events');
   }
 };
 
@@ -602,6 +604,219 @@ const getFeaturedEvents = async (limit = 5) => {
   }
 };
 
+/**
+ * Create a new event
+ * @param {Object} eventData - Event data
+ * @returns {Object} Created event
+ */
+const createEvent = async (eventData) => {
+  try {
+    // Validate event data
+    const validatedData = EventModel.validate(eventData);
+
+    // Prepare for creation (adds id, timestamps)
+    const event = EventModel.prepareForCreation(validatedData);
+
+    const command = new PutCommand({
+      TableName: EventModel.tableName,
+      Item: event,
+    });
+
+    await dynamoDb.send(command);
+
+    return {
+      success: true,
+      data: enrichEvent(event),
+      message: 'Event created successfully',
+    };
+  } catch (error) {
+    console.error('Error creating event:', error);
+    return {
+      success: false,
+      message: error.message || 'Failed to create event',
+    };
+  }
+};
+
+/**
+ * Update an existing event
+ * @param {string} eventId - Event ID
+ * @param {Object} updateData - Data to update
+ * @returns {Object} Updated event
+ */
+const updateEvent = async (eventId, updateData) => {
+  try {
+    // First, get the existing event
+    const existingResult = await getEventById(eventId);
+    if (!existingResult.success) {
+      return {
+        success: false,
+        message: 'Event not found',
+      };
+    }
+
+    // Merge existing data with updates
+    const existingEvent = existingResult.data;
+    const mergedData = {
+      ...existingEvent,
+      ...updateData,
+      id: eventId, // Ensure ID doesn't change
+      takenSeats: existingEvent.takenSeats, // Preserve taken seats
+      createdAt: existingEvent.createdAt, // Preserve created timestamp
+    };
+
+    // Validate merged data
+    const validatedData = EventModel.validate(mergedData);
+
+    // Prepare for update (adds updatedAt)
+    const updatedEvent = EventModel.prepareForUpdate(validatedData);
+
+    const command = new PutCommand({
+      TableName: EventModel.tableName,
+      Item: updatedEvent,
+    });
+
+    await dynamoDb.send(command);
+
+    return {
+      success: true,
+      data: enrichEvent(updatedEvent),
+      message: 'Event updated successfully',
+    };
+  } catch (error) {
+    console.error('Error updating event:', error);
+    return {
+      success: false,
+      message: error.message || 'Failed to update event',
+    };
+  }
+};
+
+/**
+ * Delete an event
+ * @param {string} eventId - Event ID
+ * @returns {Object} Deletion result
+ */
+const deleteEvent = async (eventId) => {
+  try {
+    // First, get the existing event to delete its image if exists
+    const existingResult = await getEventById(eventId);
+    if (!existingResult.success) {
+      return {
+        success: false,
+        message: 'Event not found',
+      };
+    }
+
+    const existingEvent = existingResult.data;
+
+    // Delete image from S3 if exists
+    if (existingEvent.imageUrl) {
+      try {
+        await s3Service.deleteImage(existingEvent.imageUrl);
+      } catch (imgError) {
+        console.warn('Failed to delete event image:', imgError);
+        // Continue with event deletion even if image deletion fails
+      }
+    }
+
+    const command = new DeleteCommand({
+      TableName: EventModel.tableName,
+      Key: {
+        id: eventId,
+      },
+    });
+
+    await dynamoDb.send(command);
+
+    return {
+      success: true,
+      message: 'Event deleted successfully',
+    };
+  } catch (error) {
+    console.error('Error deleting event:', error);
+    return {
+      success: false,
+      message: error.message || 'Failed to delete event',
+    };
+  }
+};
+
+/**
+ * Get all events for admin (including drafts)
+ * @param {Object} filters - Filter options
+ * @returns {Object} List of events
+ */
+const getAdminEvents = async (filters = {}) => {
+  try {
+    const { status, search, limit = 100, offset = 0 } = filters;
+
+    let command;
+
+    if (status && (status === 'PUBLISHED' || status === 'DRAFT')) {
+      command = new QueryCommand({
+        TableName: EventModel.tableName,
+        IndexName: 'StatusIndex',
+        KeyConditionExpression: '#status = :status',
+        ExpressionAttributeNames: {
+          '#status': 'status',
+        },
+        ExpressionAttributeValues: {
+          ':status': status,
+        },
+      });
+    } else {
+      command = new ScanCommand({
+        TableName: EventModel.tableName,
+      });
+    }
+
+    const response = await dynamoDb.send(command);
+    let events = (response.Items || []).map(enrichEvent);
+
+    // Apply search filter
+    if (search) {
+      const searchLower = search.toLowerCase();
+      events = events.filter(
+        (event) =>
+          event.title?.toLowerCase().includes(searchLower) ||
+          event.description?.toLowerCase().includes(searchLower) ||
+          event.venue?.toLowerCase().includes(searchLower) ||
+          event.location?.toLowerCase().includes(searchLower)
+      );
+    }
+
+    // Sort by created date (newest first)
+    events.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    const totalCount = events.length;
+
+    // Apply pagination
+    events = events.slice(offset, offset + limit);
+
+    return {
+      success: true,
+      data: events,
+      count: events.length,
+      totalCount,
+    };
+  } catch (error) {
+    console.error('Error getting admin events:', error);
+    throw new Error('Failed to retrieve events');
+  }
+};
+
+/**
+ * Upload event image to S3
+ * @param {Buffer} fileBuffer - File buffer
+ * @param {string} fileName - Original file name
+ * @param {string} mimeType - MIME type
+ * @returns {Object} Upload result
+ */
+const uploadEventImage = async (fileBuffer, fileName, mimeType) => {
+  return await s3Service.uploadImage(fileBuffer, fileName, mimeType);
+};
+
 module.exports = {
   initDynamoDB,
   getEventById,
@@ -611,7 +826,12 @@ module.exports = {
   getAllCategories,
   searchEvents,
   getTrendingEvents,
-  getWeekendEvents,
+  getThisWeekEvents,
   getThisMonthEvents,
   getFeaturedEvents,
+  createEvent,
+  updateEvent,
+  deleteEvent,
+  getAdminEvents,
+  uploadEventImage,
 };
