@@ -3,6 +3,132 @@ const router = express.Router();
 const eventService = require('../services/event.service');
 
 /**
+ * GET /api/v1/events/search
+ * Search and filter events
+ * Query params: search, categoryId, dateFrom, dateTo, priceMin, priceMax, location, sortBy, sortOrder, limit, offset
+ */
+router.get('/search', async (req, res) => {
+  try {
+    const {
+      search,
+      categoryId,
+      dateFrom,
+      dateTo,
+      priceMin,
+      priceMax,
+      location,
+      sortBy,
+      sortOrder,
+      limit,
+      offset,
+    } = req.query;
+
+    const params = {
+      search,
+      categoryId,
+      dateFrom,
+      dateTo,
+      priceMin: priceMin ? parseFloat(priceMin) : undefined,
+      priceMax: priceMax ? parseFloat(priceMax) : undefined,
+      location,
+      sortBy,
+      sortOrder,
+      limit: limit ? parseInt(limit) : 50,
+      offset: offset ? parseInt(offset) : 0,
+    };
+
+    const result = await eventService.searchEvents(params);
+    res.json(result);
+  } catch (error) {
+    console.error('Error in search events:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to search events',
+    });
+  }
+});
+
+/**
+ * GET /api/v1/events/featured
+ * Get featured events for carousel
+ */
+router.get('/featured', async (req, res) => {
+  try {
+    const { limit } = req.query;
+    const result = await eventService.getFeaturedEvents(
+      limit ? parseInt(limit) : 5
+    );
+    res.json(result);
+  } catch (error) {
+    console.error('Error in get featured events:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to retrieve featured events',
+    });
+  }
+});
+
+/**
+ * GET /api/v1/events/trending
+ * Get trending events (most booked)
+ */
+router.get('/trending', async (req, res) => {
+  try {
+    const { limit } = req.query;
+    const result = await eventService.getTrendingEvents(
+      limit ? parseInt(limit) : 10
+    );
+    res.json(result);
+  } catch (error) {
+    console.error('Error in get trending events:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to retrieve trending events',
+    });
+  }
+});
+
+/**
+ * GET /api/v1/events/weekend
+ * Get events happening this weekend
+ */
+router.get('/weekend', async (req, res) => {
+  try {
+    const { limit } = req.query;
+    const result = await eventService.getWeekendEvents(
+      limit ? parseInt(limit) : 20
+    );
+    res.json(result);
+  } catch (error) {
+    console.error('Error in get weekend events:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to retrieve weekend events',
+    });
+  }
+});
+
+/**
+ * GET /api/v1/events/this-month
+ * Get events happening this month
+ */
+router.get('/this-month', async (req, res) => {
+  try {
+    const { limit } = req.query;
+    const result = await eventService.getThisMonthEvents(
+      limit ? parseInt(limit) : 20
+    );
+    res.json(result);
+  } catch (error) {
+    console.error('Error in get this month events:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to retrieve this month events',
+    });
+  }
+});
+
+/**
  * GET /api/v1/events/:id
  * Get event details by ID
  */
