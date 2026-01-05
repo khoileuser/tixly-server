@@ -24,7 +24,7 @@ const FORCE_RESEED = process.argv.includes('--force');
 
 // Initialize DynamoDB client with proper credentials
 const clientConfig = {
-  region: process.env.AWS_REGION || 'ap-southeast-1',
+  region: process.env.AWS_REGION || 'us-east-1',
   requestHandler: new NodeHttpHandler({
     http2: false,
   }),
