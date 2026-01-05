@@ -45,7 +45,7 @@ const uploadImage = async (fileBuffer, fileName, mimeType) => {
 
     // Generate unique file name
     const fileExtension = fileName.split('.').pop();
-    const uniqueFileName = `events/${uuidv4()}.${fileExtension}`;
+    const uniqueFileName = `upload-images/${uuidv4()}.${fileExtension}`;
 
     const command = new PutObjectCommand({
       Bucket: bucketName,
@@ -131,7 +131,7 @@ const getUploadUrl = async (fileName, mimeType) => {
     }
 
     const fileExtension = fileName.split('.').pop();
-    const uniqueFileName = `events/${uuidv4()}.${fileExtension}`;
+    const uniqueFileName = `upload-images/${uuidv4()}.${fileExtension}`;
 
     const command = new PutObjectCommand({
       Bucket: bucketName,

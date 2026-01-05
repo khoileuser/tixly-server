@@ -71,9 +71,28 @@ const startServer = async () => {
     app.locals.dynamoClient = dynamoClient;
 
     // Enable CORS for all routes
+    // Allow S3 static website and localhost
+    const allowedOrigins = [
+      'http://localhost:3000',
+      process.env.CLIENT_URL,
+    ].filter(Boolean); // Remove undefined values
+
     app.use(
       cors({
-        origin: ['http://localhost:3000'],
+        origin: function (origin, callback) {
+          // Allow requests with no origin (like mobile apps, curl, postman)
+          if (!origin) return callback(null, true);
+
+          if (
+            allowedOrigins.indexOf(origin) !== -1 ||
+            allowedOrigins.includes('*')
+          ) {
+            callback(null, true);
+          } else {
+            console.log('Blocked origin:', origin);
+            callback(new Error('Not allowed by CORS'));
+          }
+        },
         credentials: true,
         methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
         allowedHeaders: ['Content-Type', 'Authorization'],
@@ -91,8 +110,9 @@ const startServer = async () => {
     // Start booking cleanup scheduler
     startCleanupScheduler();
 
-    app.listen(env.port, () => {
-      console.log(`Server running on port ${env.port}`);
+    const HOST = process.env.HOST || '0.0.0.0';
+    app.listen(env.port, HOST, () => {
+      console.log(`Server running on http://${HOST}:${env.port}`);
     });
   } catch (err) {
     console.error('Error initializing server:', err);
