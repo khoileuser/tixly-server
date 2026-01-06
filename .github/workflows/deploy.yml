@@ -116,23 +116,59 @@ jobs:
               id: login-ecr
               uses: aws-actions/amazon-ecr-login@v2
 
-            - name: Download task definition
+            - name: Check if ECS cluster and service exist
+              id: check-ecs
               run: |
-                  aws ecs describe-task-definition --task-definition tixly-task \
-                    --query taskDefinition > task-definition.json
+                  # Check if ECS cluster exists
+                  if aws ecs describe-clusters --clusters ${{ env.ECS_CLUSTER }} --query 'clusters[0].status' --output text 2>/dev/null | grep -q "ACTIVE"; then
+                    echo "cluster_exists=true" >> $GITHUB_OUTPUT
+                    
+                    # If cluster exists, check if service exists
+                    if aws ecs describe-services --cluster ${{ env.ECS_CLUSTER }} --services ${{ env.ECS_SERVICE }} --query 'services[0].status' --output text 2>/dev/null | grep -q "ACTIVE"; then
+                      echo "service_exists=true" >> $GITHUB_OUTPUT
+                    else
+                      echo "service_exists=false" >> $GITHUB_OUTPUT
+                    fi
+                  else
+                    echo "cluster_exists=false" >> $GITHUB_OUTPUT
+                    echo "service_exists=false" >> $GITHUB_OUTPUT
+                  fi
 
-            - name: Update ECS task definition with new image
-              id: task-def
-              uses: aws-actions/amazon-ecs-render-task-definition@v1
-              with:
-                  task-definition: task-definition.json
-                  container-name: ${{ env.CONTAINER_NAME }}
-                  image: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+            - name: Update CloudFormation Stack (First Deployment)
+              if: steps.check-ecs.outputs.service_exists == 'false'
+              run: |
+                  echo "ECS service doesn't exist. Updating CloudFormation stack with container image..."
 
-            - name: Deploy to Amazon ECS
-              uses: aws-actions/amazon-ecs-deploy-task-definition@v1
-              with:
-                  task-definition: ${{ steps.task-def.outputs.task-definition }}
-                  service: ${{ env.ECS_SERVICE }}
-                  cluster: ${{ env.ECS_CLUSTER }}
-                  wait-for-service-stability: true
+                  # Get the container image URI
+                  CONTAINER_IMAGE="${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"
+                  echo "Container Image: $CONTAINER_IMAGE"
+
+                  aws cloudformation update-stack \
+                    --stack-name tixly-infrastructure \
+                    --use-previous-template \
+                    --capabilities CAPABILITY_NAMED_IAM \
+                    --parameters \
+                      ParameterKey=ProjectName,UsePreviousValue=true \
+                      ParameterKey=Environment,UsePreviousValue=true \
+                      ParameterKey=ContainerImage,ParameterValue=$CONTAINER_IMAGE
+
+                  echo "Waiting for stack update to complete..."
+                  aws cloudformation wait stack-update-complete --stack-name tixly-infrastructure
+                  echo "✅ Stack update complete. ECS service is now running with the new image."
+
+            - name: Update ECS Service (Subsequent Deployments)
+              if: steps.check-ecs.outputs.service_exists == 'true'
+              run: |
+                  echo "ECS service exists. Forcing new deployment with latest image..."
+                  aws ecs update-service \
+                    --cluster ${{ env.ECS_CLUSTER }} \
+                    --service ${{ env.ECS_SERVICE }} \
+                    --force-new-deployment \
+                    --query 'service.deployments[0].id' \
+                    --output text
+
+                  echo "Waiting for service to stabilize..."
+                  aws ecs wait services-stable \
+                    --cluster ${{ env.ECS_CLUSTER }} \
+                    --services ${{ env.ECS_SERVICE }}
+                  echo "Deployment complete!"
