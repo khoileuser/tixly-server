@@ -170,7 +170,40 @@ jobs:
       - name: Update ECS Service (Subsequent Deployments)
         if: steps.check-ecs.outputs.service_exists == 'true'
         run: |
-          echo "ECS service exists. Forcing new deployment with latest image..."
+          echo "ECS service exists. Updating CloudFormation stack with new configuration..."
+
+          # Get the container image URI
+          CONTAINER_IMAGE="${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"
+          echo "Container Image: $CONTAINER_IMAGE"
+          echo "Client URL: ${{ vars.CLIENT_URL }}"
+
+          # Update the CloudFormation stack to update task definition with new CLIENT_URL
+          aws cloudformation update-stack \
+            --stack-name tixly-infrastructure \
+            --use-previous-template \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --parameters \
+              ParameterKey=ProjectName,UsePreviousValue=true \
+              ParameterKey=Environment,UsePreviousValue=true \
+              ParameterKey=ContainerImage,ParameterValue=$CONTAINER_IMAGE \
+              ParameterKey=ClientUrl,ParameterValue=${{ vars.CLIENT_URL }} \
+              ParameterKey=JwtSecret,UsePreviousValue=true \
+              ParameterKey=VpcCidr,UsePreviousValue=true \
+              ParameterKey=PublicSubnet1Cidr,UsePreviousValue=true \
+              ParameterKey=PublicSubnet2Cidr,UsePreviousValue=true \
+              ParameterKey=PrivateSubnet1Cidr,UsePreviousValue=true \
+              ParameterKey=PrivateSubnet2Cidr,UsePreviousValue=true \
+              ParameterKey=ContainerPort,UsePreviousValue=true \
+              ParameterKey=DesiredCount,UsePreviousValue=true \
+              ParameterKey=DomainName,UsePreviousValue=true \
+              ParameterKey=ElastiCacheNodeType,UsePreviousValue=true \
+              ParameterKey=CognitoClientSecret,UsePreviousValue=true
+
+          echo "Waiting for stack update to complete..."
+          aws cloudformation wait stack-update-complete --stack-name tixly-infrastructure
+          echo "Stack update complete."
+
+          echo "Forcing ECS service deployment with updated task definition..."
           aws ecs update-service \
             --cluster ${{ env.ECS_CLUSTER }} \
             --service ${{ env.ECS_SERVICE }} \
@@ -183,3 +216,36 @@ jobs:
             --cluster ${{ env.ECS_CLUSTER }} \
             --services ${{ env.ECS_SERVICE }}
           echo "Deployment complete!"
+
+      - name: Verify ECS Task Configuration
+        if: steps.check-ecs.outputs.service_exists == 'true'
+        run: |
+          echo "=== Verifying ECS Task Definition Configuration ==="
+
+          # Get the current task definition ARN
+          TASK_DEF_ARN=$(aws ecs describe-services \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE }} \
+            --query 'services[0].taskDefinition' \
+            --output text)
+
+          echo "Current Task Definition: $TASK_DEF_ARN"
+
+          # Extract CLIENT_URL from task definition
+          CLIENT_URL_VALUE=$(aws ecs describe-task-definition \
+            --task-definition $TASK_DEF_ARN \
+            --query 'taskDefinition.containerDefinitions[0].environment[?name==`CLIENT_URL`].value' \
+            --output text)
+
+          echo "CLIENT_URL in Task Definition: $CLIENT_URL_VALUE"
+          echo "Expected CLIENT_URL: ${{ vars.CLIENT_URL }}"
+
+          if [ "$CLIENT_URL_VALUE" = "${{ vars.CLIENT_URL }}" ]; then
+            echo "✓ CLIENT_URL is correctly configured!"
+          else
+            echo "✗ WARNING: CLIENT_URL mismatch!"
+            echo "  Task Definition has: $CLIENT_URL_VALUE"
+            echo "  Expected: ${{ vars.CLIENT_URL }}"
+          fi
+
+          echo "=========================================="

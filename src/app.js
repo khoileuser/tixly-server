@@ -81,34 +81,43 @@ const startServer = async () => {
     console.log('Allowed Origins:', allowedOrigins);
     console.log('========================');
 
-    app.use(
-      cors({
-        origin: function (origin, callback) {
-          console.log('Incoming request from origin:', origin);
+    // CORS configuration - MUST be before routes
+    const corsOptions = {
+      origin: function (origin, callback) {
+        console.log('Incoming request from origin:', origin);
 
-          // Allow requests with no origin (like mobile apps, curl, postman)
-          if (!origin) {
-            console.log('No origin - allowing request');
-            return callback(null, true);
-          }
+        // Allow requests with no origin (like mobile apps, curl, postman)
+        if (!origin) {
+          console.log('No origin - allowing request');
+          return callback(null, true);
+        }
 
-          if (
-            allowedOrigins.indexOf(origin) !== -1 ||
-            allowedOrigins.includes('*')
-          ) {
-            console.log('✓ Origin ALLOWED:', origin);
-            callback(null, true);
-          } else {
-            console.log('✗ Origin BLOCKED:', origin);
-            console.log('  Expected one of:', allowedOrigins);
-            callback(new Error('Not allowed by CORS'));
-          }
-        },
-        credentials: true,
-        methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-        allowedHeaders: ['Content-Type', 'Authorization'],
-      })
-    );
+        if (
+          allowedOrigins.indexOf(origin) !== -1 ||
+          allowedOrigins.includes('*')
+        ) {
+          console.log('✓ Origin ALLOWED:', origin);
+          callback(null, true);
+        } else {
+          console.log('✗ Origin BLOCKED:', origin);
+          console.log('  Expected one of:', allowedOrigins);
+          callback(null, false);
+        }
+      },
+      credentials: true,
+      methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+      exposedHeaders: ['Content-Length', 'X-Request-Id'],
+      maxAge: 86400, // 24 hours
+      preflightContinue: false,
+      optionsSuccessStatus: 204,
+    };
+
+    // Apply CORS middleware
+    app.use(cors(corsOptions));
+
+    // Explicitly handle OPTIONS requests
+    app.options('*', cors(corsOptions));
 
     app.use(express.json());
 
