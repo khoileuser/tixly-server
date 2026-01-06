@@ -19,6 +19,11 @@ const env = {
     cognitoClientSecret: process.env.COGNITO_CLIENT_SECRET,
     s3BucketName: process.env.S3_BUCKET_NAME,
   },
+
+  redis: {
+    host: process.env.REDIS_HOST,
+    port: parseInt(process.env.REDIS_PORT) || 6379,
+  },
 };
 
 if (!env.aws.region) {

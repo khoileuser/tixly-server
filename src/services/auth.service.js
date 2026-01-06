@@ -25,12 +25,6 @@ const cognitoClientConfig = {
   region: env.aws.region,
 };
 
-console.log('=== Cognito Client Configuration ===');
-console.log('Region:', env.aws.region);
-console.log('COGNITO_USER_POOL_ID:', env.aws.cognitoUserPoolId);
-console.log('COGNITO_CLIENT_ID:', env.aws.cognitoClientId);
-console.log('COGNITO_CLIENT_SECRET exists:', !!env.aws.cognitoClientSecret);
-
 // Only set credentials if they are non-empty strings (for local dev)
 // In ECS, credentials will be undefined and IAM role will be used
 const accessKeyId = env.aws.awsAccessKeyId;
@@ -59,14 +53,6 @@ if (
     'Cognito client using IAM role credentials (no explicit credentials provided)'
   );
 }
-
-console.log(
-  'Final Cognito config:',
-  JSON.stringify({
-    region: cognitoClientConfig.region,
-    hasCredentials: !!cognitoClientConfig.credentials,
-  })
-);
 
 const cognitoClient = new CognitoIdentityProviderClient(cognitoClientConfig);
 

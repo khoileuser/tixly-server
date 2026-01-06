@@ -11,8 +11,16 @@ const {
 const { NodeHttpHandler } = require('@smithy/node-http-handler');
 const { EventModel } = require('../models');
 const s3Service = require('./s3.service');
+const { cache } = require('../config/redis');
 
 let dynamoDb;
+
+// Cache TTL in seconds
+const CACHE_TTL = {
+  EVENT_BY_ID: 300, // 5 minutes
+  ALL_EVENTS: 60, // 1 minute
+  EVENTS_BY_CATEGORY: 120, // 2 minutes
+};
 
 /**
  * Initialize DynamoDB client
@@ -74,6 +82,20 @@ const enrichEvent = (event) => {
  */
 const getEventById = async (eventId) => {
   try {
+    // Try cache first
+    const cacheKey = `event:${eventId}`;
+    const cachedEvent = await cache.get(cacheKey);
+    
+    if (cachedEvent) {
+      console.log(`[EventService] Cache HIT for event: ${eventId}`);
+      return {
+        success: true,
+        data: enrichEvent(cachedEvent),
+      };
+    }
+
+    console.log(`[EventService] Cache MISS for event: ${eventId}`);
+
     const command = new GetCommand({
       TableName: EventModel.tableName,
       Key: {
@@ -89,6 +111,9 @@ const getEventById = async (eventId) => {
         message: 'Event not found',
       };
     }
+
+    // Cache the result
+    await cache.set(cacheKey, response.Item, CACHE_TTL.EVENT_BY_ID);
 
     return {
       success: true,
@@ -111,6 +136,21 @@ const getAllEvents = async (filters = {}) => {
       limit = 50,
       includeUnpublished = false,
     } = filters;
+
+    // Create cache key based on filters
+    const cacheKey = `events:all:${status || 'all'}:${categoryId || 'all'}:${limit}:${includeUnpublished}`;
+    const cachedEvents = await cache.get(cacheKey);
+    
+    if (cachedEvents) {
+      console.log(`[EventService] Cache HIT for events list`);
+      return {
+        success: true,
+        data: cachedEvents.map(enrichEvent),
+        count: cachedEvents.length,
+      };
+    }
+
+    console.log(`[EventService] Cache MISS for events list`);
 
     let command;
 
@@ -163,6 +203,13 @@ const getAllEvents = async (filters = {}) => {
 
     // Apply limit after filtering
     events = events.slice(0, limit);
+
+    // Cache the results (cache raw data, not enriched)
+    const rawEvents = events.map(e => {
+      const { timeStatus, availableSeats, isBookable, ...raw } = e;
+      return raw;
+    });
+    await cache.set(cacheKey, rawEvents, CACHE_TTL.ALL_EVENTS);
 
     return {
       success: true,
@@ -645,6 +692,10 @@ const createEvent = async (eventData) => {
 
     await dynamoDb.send(command);
 
+    // Invalidate all events list cache
+    await cache.delPattern('events:all:*');
+    console.log('[EventService] Invalidated events list cache after create');
+
     return {
       success: true,
       data: enrichEvent(event),
@@ -699,6 +750,11 @@ const updateEvent = async (eventId, updateData) => {
 
     await dynamoDb.send(command);
 
+    // Invalidate cache for this event and all events lists
+    await cache.del(`event:${eventId}`);
+    await cache.delPattern('events:all:*');
+    console.log(`[EventService] Invalidated cache for event: ${eventId}`);
+
     return {
       success: true,
       data: enrichEvent(updatedEvent),
@@ -749,6 +805,11 @@ const deleteEvent = async (eventId) => {
     });
 
     await dynamoDb.send(command);
+
+    // Invalidate cache for this event and all events lists
+    await cache.del(`event:${eventId}`);
+    await cache.delPattern('events:all:*');
+    console.log(`[EventService] Invalidated cache for deleted event: ${eventId}`);
 
     return {
       success: true,

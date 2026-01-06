@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 
 const connectDB = require('./config/db');
+const { connectRedis } = require('./config/redis');
 const env = require('./config/env');
 const routes = require('./routes');
 const initializeTables = require('./config/initDB');
@@ -67,6 +68,11 @@ const startServer = async () => {
     console.log('Connecting to DynamoDB...');
     await initializeTables(dynamoClient);
     console.log('Database initialization complete');
+
+    // Initialize Redis connection
+    console.log('Connecting to Redis...');
+    connectRedis();
+    console.log('Redis initialization complete');
 
     // Auto-seed database if in production and tables are empty
     if (env.nodeEnv === 'production') {
