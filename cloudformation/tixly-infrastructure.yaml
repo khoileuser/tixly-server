@@ -145,7 +145,6 @@ Resources:
         - email
       AliasAttributes:
         - email
-        - preferred_username
       UsernameConfiguration:
         CaseSensitive: false
       Schema:
@@ -158,10 +157,6 @@ Resources:
           Mutable: true
           Required: true
         - Name: phone_number
-          AttributeDataType: String
-          Mutable: true
-          Required: true
-        - Name: preferred_username
           AttributeDataType: String
           Mutable: true
           Required: true
@@ -200,12 +195,10 @@ Resources:
         - email
         - name
         - phone_number
-        - preferred_username
       WriteAttributes:
         - email
         - name
         - phone_number
-        - preferred_username
 
   CognitoAdminGroup:
     Type: AWS::Cognito::UserPoolGroup
@@ -456,6 +449,20 @@ Resources:
     Properties:
       VpcId: !Ref VPC
       ServiceName: !Sub 'com.amazonaws.${AWS::Region}.sns'
+      VpcEndpointType: Interface
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      SecurityGroupIds:
+        - !Ref VPCEndpointSecurityGroup
+      PrivateDnsEnabled: true
+
+  # Cognito Identity Provider Endpoint (for authentication)
+  CognitoIdpEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.cognito-idp'
       VpcEndpointType: Interface
       SubnetIds:
         - !Ref PrivateSubnet1

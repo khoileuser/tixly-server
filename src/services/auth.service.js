@@ -104,7 +104,7 @@ const register = async (userData, dynamoClient) => {
         { Name: 'email', Value: email },
         { Name: 'name', Value: name },
         { Name: 'phone_number', Value: phoneNumber },
-        { Name: 'preferred_username', Value: username },
+        // Don't send preferred_username - Cognito will set it from Username after confirmation
       ],
     };
 
