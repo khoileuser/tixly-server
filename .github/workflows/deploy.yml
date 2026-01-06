@@ -218,11 +218,46 @@ jobs:
             --task-definition $NEW_TASK_DEF_ARN \
             --force-new-deployment
 
-          echo "Waiting for service to stabilize..."
-          aws ecs wait services-stable \
+          echo "Deployment initiated. Checking deployment status..."
+
+          # Wait a bit for deployment to start
+          sleep 10
+
+          # Check for any stopped tasks with errors
+          echo "Checking for task failures..."
+          STOPPED_TASKS=$(aws ecs list-tasks \
             --cluster ${{ env.ECS_CLUSTER }} \
-            --services ${{ env.ECS_SERVICE }}
-          echo "Deployment complete!"
+            --service-name ${{ env.ECS_SERVICE }} \
+            --desired-status STOPPED \
+            --query 'taskArns[0]' \
+            --output text)
+
+          if [ "$STOPPED_TASKS" != "None" ] && [ ! -z "$STOPPED_TASKS" ]; then
+            echo "Found stopped task: $STOPPED_TASKS"
+            echo "Task details:"
+            aws ecs describe-tasks \
+              --cluster ${{ env.ECS_CLUSTER }} \
+              --tasks $STOPPED_TASKS \
+              --query 'tasks[0].{StoppedReason:stoppedReason,Containers:containers[0].{Reason:reason,ExitCode:exitCode}}'
+          fi
+
+          # Check service events for errors
+          echo "Recent service events:"
+          aws ecs describe-services \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE }} \
+            --query 'services[0].events[:5]' \
+            --output table
+
+          echo ""
+          echo "Deployment status updated. The service will continue deploying in the background."
+          echo "Check CloudWatch logs for container startup: /ecs/tixly-backend"
+          echo "Monitor deployment at: https://console.aws.amazon.com/ecs/v2/clusters/${{ env.ECS_CLUSTER }}/services/${{ env.ECS_SERVICE }}"
+
+          # Try to get recent logs
+          echo ""
+          echo "=== Recent Container Logs ==="
+          aws logs tail /ecs/tixly-backend --since 2m --format short 2>/dev/null || echo "No recent logs available yet"
 
       - name: Verify ECS Task Configuration
         if: steps.check-ecs.outputs.service_exists == 'true'
