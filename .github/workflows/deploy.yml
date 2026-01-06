@@ -177,9 +177,19 @@ jobs:
           echo "Container Image: $CONTAINER_IMAGE"
           echo "Client URL: ${{ vars.CLIENT_URL }}"
 
-          # Get current task definition
+          # Get the current task definition ARN from the running service
+          echo "Getting current task definition from service..."
+          CURRENT_TASK_DEF_ARN=$(aws ecs describe-services \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE }} \
+            --query 'services[0].taskDefinition' \
+            --output text)
+
+          echo "Current Task Definition ARN: $CURRENT_TASK_DEF_ARN"
+
+          # Get current task definition details
           CURRENT_TASK_DEF=$(aws ecs describe-task-definition \
-            --task-definition ${{ env.ECS_CLUSTER }}-task \
+            --task-definition $CURRENT_TASK_DEF_ARN \
             --query 'taskDefinition' \
             --output json)
 
