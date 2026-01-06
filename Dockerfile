@@ -24,7 +24,9 @@ COPY --from=builder /app/node_modules ./node_modules
 # Copy application code
 COPY --chown=bunuser:bunuser src ./src
 COPY --chown=bunuser:bunuser package.json ./
-COPY --chown=bunuser:bunuser .env ./.env
+
+# Copy .env file (created by CI/CD or manually for local builds)
+COPY --chown=bunuser:bunuser .env* ./
 
 # Switch to non-root user
 USER bunuser
