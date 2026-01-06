@@ -92,11 +92,8 @@ const startServer = async () => {
     // CORS configuration - MUST be before routes
     const corsOptions = {
       origin: function (origin, callback) {
-        console.log('Incoming request from origin:', origin);
-
         // Allow requests with no origin (like mobile apps, curl, postman)
         if (!origin) {
-          console.log('No origin - allowing request');
           return callback(null, true);
         }
 
@@ -104,11 +101,8 @@ const startServer = async () => {
           allowedOrigins.indexOf(origin) !== -1 ||
           allowedOrigins.includes('*')
         ) {
-          console.log('✓ Origin ALLOWED:', origin);
           callback(null, true);
         } else {
-          console.log('✗ Origin BLOCKED:', origin);
-          console.log('  Expected one of:', allowedOrigins);
           callback(null, false);
         }
       },

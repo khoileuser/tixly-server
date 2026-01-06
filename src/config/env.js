@@ -7,7 +7,7 @@ const env = {
   clientUrl: process.env.CLIENT_URL,
 
   aws: {
-    region: process.env.AWS_REGION || 'ap-southeast-1',
+    region: process.env.AWS_REGION || 'us-east-1',
     dynamodbEndpoint: process.env.DYNAMODB_ENDPOINT,
     // Only set credentials if they exist (for local dev)
     // In ECS, these will be undefined and IAM role will be used

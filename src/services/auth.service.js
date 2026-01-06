@@ -25,6 +25,12 @@ const cognitoClientConfig = {
   region: env.aws.region,
 };
 
+console.log('=== Cognito Client Configuration ===');
+console.log('Region:', env.aws.region);
+console.log('COGNITO_USER_POOL_ID:', env.aws.cognitoUserPoolId);
+console.log('COGNITO_CLIENT_ID:', env.aws.cognitoClientId);
+console.log('COGNITO_CLIENT_SECRET exists:', !!env.aws.cognitoClientSecret);
+
 // Only set credentials if they are non-empty strings (for local dev)
 // In ECS, credentials will be undefined and IAM role will be used
 const accessKeyId = env.aws.awsAccessKeyId;
@@ -54,6 +60,14 @@ if (
   );
 }
 
+console.log(
+  'Final Cognito config:',
+  JSON.stringify({
+    region: cognitoClientConfig.region,
+    hasCredentials: !!cognitoClientConfig.credentials,
+  })
+);
+
 const cognitoClient = new CognitoIdentityProviderClient(cognitoClientConfig);
 
 /**
@@ -77,6 +91,10 @@ const register = async (userData, dynamoClient) => {
   const { username, email, password, name, phoneNumber } = userData;
 
   try {
+    console.log('=== Starting user registration ===');
+    console.log('Username:', username);
+    console.log('Email:', email);
+
     // Step 1: Register user in Cognito
     const signUpParams = {
       ClientId: env.aws.cognitoClientId,
@@ -94,11 +112,19 @@ const register = async (userData, dynamoClient) => {
     const secretHash = calculateSecretHash(username);
     if (secretHash) {
       signUpParams.SecretHash = secretHash;
+      console.log('SECRET_HASH calculated and added');
+    } else {
+      console.log('No SECRET_HASH (client secret not configured)');
     }
 
+    console.log('Sending SignUpCommand to Cognito...');
     const signUpCommand = new SignUpCommand(signUpParams);
 
     const cognitoResponse = await cognitoClient.send(signUpCommand);
+    console.log(
+      'Cognito registration successful, UserSub:',
+      cognitoResponse.UserSub
+    );
     const cognitoId = cognitoResponse.UserSub; // This is the Cognito sub
 
     // Step 2: Create user record in DynamoDB using model
@@ -137,7 +163,11 @@ const register = async (userData, dynamoClient) => {
       },
     };
   } catch (error) {
-    console.error('Registration error:', error);
+    console.error('=== Registration error ===');
+    console.error('Error name:', error.name);
+    console.error('Error message:', error.message);
+    console.error('Error code:', error.code);
+    console.error('Full error:', JSON.stringify(error, null, 2));
 
     if (error.name === 'UsernameExistsException') {
       throw new Error('Username already exists');
@@ -149,7 +179,7 @@ const register = async (userData, dynamoClient) => {
       throw new Error('Invalid parameters provided');
     }
 
-    throw new Error(error.message || 'Registration failed');
+    throw new Error(error.message || error.code || 'Registration failed');
   }
 };
 
