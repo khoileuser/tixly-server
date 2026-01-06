@@ -1,176 +1,185 @@
 name: Build and Deploy to AWS ECR
 
 on:
-    push:
-        branches: ["main"]
-    workflow_dispatch:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
 
 env:
-    AWS_REGION: us-east-1
-    ECR_REPOSITORY: tixly-backend
-    ECS_CLUSTER: tixly-cluster
-    ECS_SERVICE: tixly-service
-    CONTAINER_NAME: tixly-container
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: tixly-backend
+  ECS_CLUSTER: tixly-cluster
+  ECS_SERVICE: tixly-service
+  CONTAINER_NAME: tixly-container
 
 jobs:
-    build-and-push:
-        name: Build and Push Docker Image
-        runs-on: ubuntu-latest
+  build-and-push:
+    name: Build and Push Docker Image
+    runs-on: ubuntu-latest
 
-        steps:
-            - name: Checkout code
-              uses: actions/checkout@v4
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-            - name: Configure AWS credentials
-              uses: aws-actions/configure-aws-credentials@v4
-              with:
-                  aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-                  aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-                  aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
-                  aws-region: ${{ env.AWS_REGION }}
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
 
-            - name: Login to Amazon ECR
-              id: login-ecr
-              uses: aws-actions/amazon-ecr-login@v2
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
 
-            - name: Get Cognito Client Secret from CloudFormation
-              id: get-cognito-secret
-              run: |
-                  COGNITO_CLIENT_SECRET=$(aws cloudformation describe-stacks \
-                    --stack-name tixly-infrastructure \
-                    --query "Stacks[0].Outputs[?OutputKey=='CognitoUserPoolClientSecret'].OutputValue" \
-                    --output text)
-                  echo "::add-mask::$COGNITO_CLIENT_SECRET"
-                  echo "cognito_client_secret=$COGNITO_CLIENT_SECRET" >> $GITHUB_OUTPUT
+      - name: Get Cognito Client Secret from CloudFormation
+        id: get-cognito-secret
+        run: |
+          COGNITO_CLIENT_SECRET=$(aws cloudformation describe-stacks \
+            --stack-name tixly-infrastructure \
+            --query "Stacks[0].Outputs[?OutputKey=='CognitoUserPoolClientSecret'].OutputValue" \
+            --output text)
+          echo "::add-mask::$COGNITO_CLIENT_SECRET"
+          echo "cognito_client_secret=$COGNITO_CLIENT_SECRET" >> $GITHUB_OUTPUT
 
-            - name: Create .env file
-              run: |
-                  cat > .env << EOF
-                  # Server Configuration
-                  HOST=0.0.0.0
-                  PORT=8080
-                  NODE_ENV=production
-                  CLIENT_URL=${{ secrets.CLIENT_URL }}
+      - name: Create .env file
+        run: |
+          echo "Configuration Values (Debug)"
+          echo "CLIENT_URL: ${{ vars.CLIENT_URL }}"
+          echo "DYNAMODB_ENDPOINT: ${{ vars.DYNAMODB_ENDPOINT }}"
+          echo "S3_BUCKET_NAME: ${{ vars.S3_BUCKET_NAME }}"
 
-                  # Booking Configuration
-                  BOOKING_TIMEOUT_MINUTES=10
+          cat > .env << EOF
+          # Server Configuration
+          HOST=0.0.0.0
+          PORT=8080
+          NODE_ENV=production
+          CLIENT_URL=${{ vars.CLIENT_URL }}
 
-                  # AWS Configuration
-                  AWS_REGION=${{ env.AWS_REGION }}
-                  AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}
-                  AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}
-                  AWS_SESSION_TOKEN=${{ secrets.AWS_SESSION_TOKEN }}
+          # Booking Configuration
+          BOOKING_TIMEOUT_MINUTES=10
 
-                  # DynamoDB Configuration
-                  DYNAMODB_ENDPOINT=${{ secrets.DYNAMODB_ENDPOINT }}
+          # AWS Configuration
+          AWS_REGION=${{ env.AWS_REGION }}
+          AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_SESSION_TOKEN=${{ secrets.AWS_SESSION_TOKEN }}
 
-                  # Cognito Configuration
-                  COGNITO_USER_POOL_ID=${{ secrets.COGNITO_USER_POOL_ID }}
-                  COGNITO_CLIENT_ID=${{ secrets.COGNITO_CLIENT_ID }}
-                  COGNITO_CLIENT_SECRET=${{ steps.get-cognito-secret.outputs.cognito_client_secret }}
+          # DynamoDB Configuration
+          DYNAMODB_ENDPOINT=${{ vars.DYNAMODB_ENDPOINT }}
 
-                  # S3 Configuration
-                  S3_BUCKET_NAME=${{ secrets.S3_BUCKET_NAME }}
+          # Cognito Configuration
+          COGNITO_USER_POOL_ID=${{ secrets.COGNITO_USER_POOL_ID }}
+          COGNITO_CLIENT_ID=${{ secrets.COGNITO_CLIENT_ID }}
+          COGNITO_CLIENT_SECRET=${{ steps.get-cognito-secret.outputs.cognito_client_secret }}
 
-                  # JWT Configuration
-                  JWT_SECRET=${{ secrets.JWT_SECRET }}
-                  EOF
+          # S3 Configuration
+          S3_BUCKET_NAME=${{ vars.S3_BUCKET_NAME }}
 
-            - name: Build, tag, and push image to Amazon ECR
-              id: build-image
-              env:
-                  ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-                  IMAGE_TAG: ${{ github.sha }}
-              run: |
-                  # Build the Docker image
-                  docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-                  docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
+          # JWT Configuration
+          JWT_SECRET=${{ secrets.JWT_SECRET }}
+          EOF
 
-                  # Push both tags to ECR
-                  docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-                  docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          echo ""
+          echo "Generated .env file"
+          cat .env | grep -v "SECRET\|KEY_ID\|ACCESS_KEY\|SESSION_TOKEN"
 
-                  # Output the image URI
-                  echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+      - name: Build, tag, and push image to Amazon ECR
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          # Build the Docker image
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
 
-            - name: Print image URI
-              run: |
-                  echo "Image pushed to: ${{ steps.build-image.outputs.image }}"
+          # Push both tags to ECR
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
 
-    deploy:
-        name: Deploy to ECS
-        needs: build-and-push
-        runs-on: ubuntu-latest
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+          # Output the image URI
+          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
-        steps:
-            - name: Configure AWS credentials
-              uses: aws-actions/configure-aws-credentials@v4
-              with:
-                  aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-                  aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-                  aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
-                  aws-region: ${{ env.AWS_REGION }}
+      - name: Print image URI
+        run: |
+          echo "Image pushed to: ${{ steps.build-image.outputs.image }}"
 
-            - name: Login to Amazon ECR
-              id: login-ecr
-              uses: aws-actions/amazon-ecr-login@v2
+  deploy:
+    name: Deploy to ECS
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
 
-            - name: Check if ECS cluster and service exist
-              id: check-ecs
-              run: |
-                  # Check if ECS cluster exists
-                  if aws ecs describe-clusters --clusters ${{ env.ECS_CLUSTER }} --query 'clusters[0].status' --output text 2>/dev/null | grep -q "ACTIVE"; then
-                    echo "cluster_exists=true" >> $GITHUB_OUTPUT
-                    
-                    # If cluster exists, check if service exists
-                    if aws ecs describe-services --cluster ${{ env.ECS_CLUSTER }} --services ${{ env.ECS_SERVICE }} --query 'services[0].status' --output text 2>/dev/null | grep -q "ACTIVE"; then
-                      echo "service_exists=true" >> $GITHUB_OUTPUT
-                    else
-                      echo "service_exists=false" >> $GITHUB_OUTPUT
-                    fi
-                  else
-                    echo "cluster_exists=false" >> $GITHUB_OUTPUT
-                    echo "service_exists=false" >> $GITHUB_OUTPUT
-                  fi
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
 
-            - name: Update CloudFormation Stack (First Deployment)
-              if: steps.check-ecs.outputs.service_exists == 'false'
-              run: |
-                  echo "ECS service doesn't exist. Updating CloudFormation stack with container image..."
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
 
-                  # Get the container image URI
-                  CONTAINER_IMAGE="${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"
-                  echo "Container Image: $CONTAINER_IMAGE"
+      - name: Check if ECS cluster and service exist
+        id: check-ecs
+        run: |
+          # Check if ECS cluster exists
+          if aws ecs describe-clusters --clusters ${{ env.ECS_CLUSTER }} --query 'clusters[0].status' --output text 2>/dev/null | grep -q "ACTIVE"; then
+            echo "cluster_exists=true" >> $GITHUB_OUTPUT
+            
+            # If cluster exists, check if service exists
+            if aws ecs describe-services --cluster ${{ env.ECS_CLUSTER }} --services ${{ env.ECS_SERVICE }} --query 'services[0].status' --output text 2>/dev/null | grep -q "ACTIVE"; then
+              echo "service_exists=true" >> $GITHUB_OUTPUT
+            else
+              echo "service_exists=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "cluster_exists=false" >> $GITHUB_OUTPUT
+            echo "service_exists=false" >> $GITHUB_OUTPUT
+          fi
 
-                  aws cloudformation update-stack \
-                    --stack-name tixly-infrastructure \
-                    --use-previous-template \
-                    --capabilities CAPABILITY_NAMED_IAM \
-                    --parameters \
-                      ParameterKey=ProjectName,UsePreviousValue=true \
-                      ParameterKey=Environment,UsePreviousValue=true \
-                      ParameterKey=ContainerImage,ParameterValue=$CONTAINER_IMAGE \
-                      ParameterKey=ClientUrl,ParameterValue=${{ secrets.CLIENT_URL }} \
-                      ParameterKey=JwtSecret,ParameterValue=${{ secrets.JWT_SECRET }}
+      - name: Update CloudFormation Stack (First Deployment)
+        if: steps.check-ecs.outputs.service_exists == 'false'
+        run: |
+          echo "ECS service doesn't exist. Updating CloudFormation stack with container image..."
 
-                  echo "Waiting for stack update to complete..."
-                  aws cloudformation wait stack-update-complete --stack-name tixly-infrastructure
-                  echo "Stack update complete. ECS service is now running with the new image."
+          # Get the container image URI
+          CONTAINER_IMAGE="${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"
+          echo "Container Image: $CONTAINER_IMAGE"
 
-            - name: Update ECS Service (Subsequent Deployments)
-              if: steps.check-ecs.outputs.service_exists == 'true'
-              run: |
-                  echo "ECS service exists. Forcing new deployment with latest image..."
-                  aws ecs update-service \
-                    --cluster ${{ env.ECS_CLUSTER }} \
-                    --service ${{ env.ECS_SERVICE }} \
-                    --force-new-deployment \
-                    --query 'service.deployments[0].id' \
-                    --output text
+          aws cloudformation update-stack \
+            --stack-name tixly-infrastructure \
+            --use-previous-template \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --parameters \
+              ParameterKey=ProjectName,UsePreviousValue=true \
+              ParameterKey=Environment,UsePreviousValue=true \
+              ParameterKey=ContainerImage,ParameterValue=$CONTAINER_IMAGE \
+              ParameterKey=ClientUrl,ParameterValue=${{ vars.CLIENT_URL }} \
+              ParameterKey=JwtSecret,ParameterValue=${{ secrets.JWT_SECRET }}
 
-                  echo "Waiting for service to stabilize..."
-                  aws ecs wait services-stable \
-                    --cluster ${{ env.ECS_CLUSTER }} \
-                    --services ${{ env.ECS_SERVICE }}
-                  echo "Deployment complete!"
+          echo "Waiting for stack update to complete..."
+          aws cloudformation wait stack-update-complete --stack-name tixly-infrastructure
+          echo "Stack update complete. ECS service is now running with the new image."
+
+      - name: Update ECS Service (Subsequent Deployments)
+        if: steps.check-ecs.outputs.service_exists == 'true'
+        run: |
+          echo "ECS service exists. Forcing new deployment with latest image..."
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service ${{ env.ECS_SERVICE }} \
+            --force-new-deployment \
+            --query 'service.deployments[0].id' \
+            --output text
+
+          echo "Waiting for service to stabilize..."
+          aws ecs wait services-stable \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE }}
+          echo "Deployment complete!"

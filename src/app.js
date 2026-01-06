@@ -76,18 +76,31 @@ const startServer = async () => {
       Boolean
     );
 
+    console.log('=== CORS Configuration ===');
+    console.log('CLIENT_URL from env:', env.clientUrl);
+    console.log('Allowed Origins:', allowedOrigins);
+    console.log('========================');
+
     app.use(
       cors({
         origin: function (origin, callback) {
+          console.log('Incoming request from origin:', origin);
+
           // Allow requests with no origin (like mobile apps, curl, postman)
-          if (!origin) return callback(null, true);
+          if (!origin) {
+            console.log('No origin - allowing request');
+            return callback(null, true);
+          }
 
           if (
             allowedOrigins.indexOf(origin) !== -1 ||
             allowedOrigins.includes('*')
           ) {
+            console.log('✓ Origin ALLOWED:', origin);
             callback(null, true);
           } else {
+            console.log('✗ Origin BLOCKED:', origin);
+            console.log('  Expected one of:', allowedOrigins);
             callback(new Error('Not allowed by CORS'));
           }
         },
