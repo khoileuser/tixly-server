@@ -170,46 +170,43 @@ jobs:
       - name: Update ECS Service (Subsequent Deployments)
         if: steps.check-ecs.outputs.service_exists == 'true'
         run: |
-          echo "ECS service exists. Updating CloudFormation stack with new configuration..."
+          echo "ECS service exists. Updating task definition and deploying..."
 
           # Get the container image URI
           CONTAINER_IMAGE="${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"
           echo "Container Image: $CONTAINER_IMAGE"
           echo "Client URL: ${{ vars.CLIENT_URL }}"
 
-          # Update the CloudFormation stack to update task definition with new CLIENT_URL
-          aws cloudformation update-stack \
-            --stack-name tixly-infrastructure \
-            --use-previous-template \
-            --capabilities CAPABILITY_NAMED_IAM \
-            --parameters \
-              ParameterKey=ProjectName,UsePreviousValue=true \
-              ParameterKey=Environment,UsePreviousValue=true \
-              ParameterKey=ContainerImage,ParameterValue=$CONTAINER_IMAGE \
-              ParameterKey=ClientUrl,ParameterValue=${{ vars.CLIENT_URL }} \
-              ParameterKey=JwtSecret,UsePreviousValue=true \
-              ParameterKey=VpcCidr,UsePreviousValue=true \
-              ParameterKey=PublicSubnet1Cidr,UsePreviousValue=true \
-              ParameterKey=PublicSubnet2Cidr,UsePreviousValue=true \
-              ParameterKey=PrivateSubnet1Cidr,UsePreviousValue=true \
-              ParameterKey=PrivateSubnet2Cidr,UsePreviousValue=true \
-              ParameterKey=ContainerPort,UsePreviousValue=true \
-              ParameterKey=DesiredCount,UsePreviousValue=true \
-              ParameterKey=DomainName,UsePreviousValue=true \
-              ParameterKey=ElastiCacheNodeType,UsePreviousValue=true \
-              ParameterKey=CognitoClientSecret,UsePreviousValue=true
+          # Get current task definition
+          CURRENT_TASK_DEF=$(aws ecs describe-task-definition \
+            --task-definition ${{ env.ECS_CLUSTER }}-task \
+            --query 'taskDefinition' \
+            --output json)
 
-          echo "Waiting for stack update to complete..."
-          aws cloudformation wait stack-update-complete --stack-name tixly-infrastructure
-          echo "Stack update complete."
+          # Create new task definition with updated image and CLIENT_URL
+          NEW_TASK_DEF=$(echo $CURRENT_TASK_DEF | jq --arg IMAGE "$CONTAINER_IMAGE" --arg CLIENT_URL "${{ vars.CLIENT_URL }}" '
+            .containerDefinitions[0].image = $IMAGE |
+            .containerDefinitions[0].environment |= map(
+              if .name == "CLIENT_URL" then .value = $CLIENT_URL else . end
+            ) |
+            del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)
+          ')
 
-          echo "Forcing ECS service deployment with updated task definition..."
+          # Register new task definition
+          echo "Registering new task definition..."
+          NEW_TASK_DEF_ARN=$(echo $NEW_TASK_DEF | aws ecs register-task-definition --cli-input-json file:///dev/stdin \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text)
+
+          echo "New Task Definition: $NEW_TASK_DEF_ARN"
+
+          # Update service with new task definition
+          echo "Updating ECS service with new task definition..."
           aws ecs update-service \
             --cluster ${{ env.ECS_CLUSTER }} \
             --service ${{ env.ECS_SERVICE }} \
-            --force-new-deployment \
-            --query 'service.deployments[0].id' \
-            --output text
+            --task-definition $NEW_TASK_DEF_ARN \
+            --force-new-deployment
 
           echo "Waiting for service to stabilize..."
           aws ecs wait services-stable \
