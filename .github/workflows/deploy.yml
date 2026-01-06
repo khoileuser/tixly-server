@@ -154,7 +154,7 @@ jobs:
 
                   echo "Waiting for stack update to complete..."
                   aws cloudformation wait stack-update-complete --stack-name tixly-infrastructure
-                  echo "✅ Stack update complete. ECS service is now running with the new image."
+                  echo "Stack update complete. ECS service is now running with the new image."
 
             - name: Update ECS Service (Subsequent Deployments)
               if: steps.check-ecs.outputs.service_exists == 'true'
