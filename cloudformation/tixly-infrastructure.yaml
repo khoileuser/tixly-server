@@ -51,6 +51,23 @@ Parameters:
     Default: 8080
     Description: Port on which the container listens
 
+  ClientUrl:
+    Type: String
+    Default: ''
+    Description: Frontend URL for CORS configuration
+
+  JwtSecret:
+    Type: String
+    NoEcho: true
+    Default: ''
+    Description: JWT secret for token generation
+
+  CognitoClientSecret:
+    Type: String
+    NoEcho: true
+    Default: ''
+    Description: Cognito Client Secret (auto-populated from User Pool Client)
+
   DesiredCount:
     Type: Number
     Default: 2
@@ -599,14 +616,26 @@ Resources:
           Environment:
             - Name: NODE_ENV
               Value: !Ref Environment
+            - Name: HOST
+              Value: 0.0.0.0
             - Name: PORT
               Value: !Ref ContainerPort
+            - Name: CLIENT_URL
+              Value: !Ref ClientUrl
+            - Name: BOOKING_TIMEOUT_MINUTES
+              Value: '10'
             - Name: AWS_REGION
               Value: !Ref AWS::Region
             - Name: COGNITO_USER_POOL_ID
               Value: !Ref CognitoUserPool
             - Name: COGNITO_CLIENT_ID
               Value: !Ref CognitoUserPoolClient
+            - Name: COGNITO_CLIENT_SECRET
+              Value: !GetAtt CognitoUserPoolClient.ClientSecret
+            - Name: S3_BUCKET_NAME
+              Value: !Ref S3Bucket
+            - Name: JWT_SECRET
+              Value: !Ref JwtSecret
             - Name: DYNAMODB_EVENTS_TABLE
               Value: !Ref DynamoDBEventsTable
             - Name: DYNAMODB_BOOKINGS_TABLE

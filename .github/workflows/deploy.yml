@@ -150,7 +150,9 @@ jobs:
                     --parameters \
                       ParameterKey=ProjectName,UsePreviousValue=true \
                       ParameterKey=Environment,UsePreviousValue=true \
-                      ParameterKey=ContainerImage,ParameterValue=$CONTAINER_IMAGE
+                      ParameterKey=ContainerImage,ParameterValue=$CONTAINER_IMAGE \
+                      ParameterKey=ClientUrl,ParameterValue=${{ secrets.CLIENT_URL }} \
+                      ParameterKey=JwtSecret,ParameterValue=${{ secrets.JWT_SECRET }}
 
                   echo "Waiting for stack update to complete..."
                   aws cloudformation wait stack-update-complete --stack-name tixly-infrastructure
