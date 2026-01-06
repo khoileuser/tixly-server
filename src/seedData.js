@@ -626,10 +626,31 @@ const seedEvents = async (categories) => {
  * Main seed function
  */
 const seedDatabase = async () => {
-  console.log('Starting database seeding...\n');
-  if (FORCE_RESEED) {
+  console.log('Starting database seeding check...\n');
+
+  // Check if database already has data (skip if not forcing and data exists)
+  if (!FORCE_RESEED) {
+    console.log('Checking if database already has data...');
+    const categoriesEmpty = await isTableEmpty('Categories');
+    const eventsEmpty = await isTableEmpty('Events');
+
+    if (!categoriesEmpty && !eventsEmpty) {
+      console.log('✓ Database already has data, skipping seed');
+      console.log('  Tip: Use --force flag to re-seed: bun seed --force');
+      return;
+    }
+
+    if (!categoriesEmpty) {
+      console.log('  Categories table has data');
+    }
+    if (!eventsEmpty) {
+      console.log('  Events table has data');
+    }
+    console.log('  Some tables are empty, proceeding with seed...\n');
+  } else {
     console.log('FORCE MODE: Clearing existing data before seeding\n');
   }
+
   console.log('='.repeat(50));
 
   try {

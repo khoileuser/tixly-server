@@ -193,16 +193,20 @@ jobs:
             --query 'taskDefinition' > task-def.json
 
           # Update the task definition using jq
-          jq --arg IMAGE "$CONTAINER_IMAGE" --arg CLIENT_URL "${{ vars.CLIENT_URL }}" '
+          jq --arg IMAGE "$CONTAINER_IMAGE" \
+             --arg CLIENT_URL "${{ vars.CLIENT_URL }}" '
             .containerDefinitions[0].image = $IMAGE |
             .containerDefinitions[0].environment = (
               .containerDefinitions[0].environment // [] |
-              map(select(.name != "CLIENT_URL")) + [{"name": "CLIENT_URL", "value": $CLIENT_URL}]
+              map(select(.name != "CLIENT_URL" and .name != "DYNAMODB_ENDPOINT" and .name != "AWS_ACCESS_KEY_ID" and .name != "AWS_SECRET_ACCESS_KEY" and .name != "AWS_SESSION_TOKEN")) + 
+              [
+                {"name": "CLIENT_URL", "value": $CLIENT_URL}
+              ]
             ) |
             del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)
           ' task-def.json > new-task-def.json
 
-          echo "=== Updated Task Definition (CLIENT_URL check) ==="
+          echo "=== Updated Task Definition (Environment Variables) ==="
           jq '.containerDefinitions[0].environment[] | select(.name == "CLIENT_URL")' new-task-def.json
 
           # Register new task definition

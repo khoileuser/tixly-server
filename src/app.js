@@ -68,6 +68,19 @@ const startServer = async () => {
     await initializeTables(dynamoClient);
     console.log('Database initialization complete');
 
+    // Auto-seed database if in production and tables are empty
+    if (env.nodeEnv === 'production') {
+      console.log('Checking if database needs seeding...');
+      const { seedDatabase } = require('./seedData');
+      try {
+        await seedDatabase();
+        console.log('Database seeding check complete');
+      } catch (error) {
+        console.warn('Database seeding skipped or failed:', error.message);
+        // Don't fail startup if seeding fails
+      }
+    }
+
     app.locals.dynamoClient = dynamoClient;
 
     // Enable CORS for all routes
