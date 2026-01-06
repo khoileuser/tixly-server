@@ -187,24 +187,24 @@ jobs:
 
           echo "Current Task Definition ARN: $CURRENT_TASK_DEF_ARN"
 
-          # Get current task definition details
-          CURRENT_TASK_DEF=$(aws ecs describe-task-definition \
+          # Get current task definition and save to file
+          aws ecs describe-task-definition \
             --task-definition $CURRENT_TASK_DEF_ARN \
-            --query 'taskDefinition' \
-            --output json)
+            --query 'taskDefinition' > task-def.json
 
-          # Create new task definition with updated image and CLIENT_URL
-          NEW_TASK_DEF=$(echo $CURRENT_TASK_DEF | jq --arg IMAGE "$CONTAINER_IMAGE" --arg CLIENT_URL "${{ vars.CLIENT_URL }}" '
+          # Update the task definition using jq
+          jq --arg IMAGE "$CONTAINER_IMAGE" --arg CLIENT_URL "${{ vars.CLIENT_URL }}" '
             .containerDefinitions[0].image = $IMAGE |
             .containerDefinitions[0].environment |= map(
               if .name == "CLIENT_URL" then .value = $CLIENT_URL else . end
             ) |
             del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)
-          ')
+          ' task-def.json > new-task-def.json
 
           # Register new task definition
           echo "Registering new task definition..."
-          NEW_TASK_DEF_ARN=$(echo $NEW_TASK_DEF | aws ecs register-task-definition --cli-input-json file:///dev/stdin \
+          NEW_TASK_DEF_ARN=$(aws ecs register-task-definition \
+            --cli-input-json file://new-task-def.json \
             --query 'taskDefinition.taskDefinitionArn' \
             --output text)
 
