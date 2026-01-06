@@ -76,11 +76,6 @@ const startServer = async () => {
       Boolean
     );
 
-    console.log('=== CORS Configuration ===');
-    console.log('CLIENT_URL from env:', env.clientUrl);
-    console.log('Allowed Origins:', allowedOrigins);
-    console.log('========================');
-
     // CORS configuration - MUST be before routes
     const corsOptions = {
       origin: function (origin, callback) {
@@ -115,9 +110,6 @@ const startServer = async () => {
 
     // Apply CORS middleware
     app.use(cors(corsOptions));
-
-    // Explicitly handle OPTIONS requests
-    app.options('*', cors(corsOptions));
 
     app.use(express.json());
 

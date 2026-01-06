@@ -195,11 +195,15 @@ jobs:
           # Update the task definition using jq
           jq --arg IMAGE "$CONTAINER_IMAGE" --arg CLIENT_URL "${{ vars.CLIENT_URL }}" '
             .containerDefinitions[0].image = $IMAGE |
-            .containerDefinitions[0].environment |= map(
-              if .name == "CLIENT_URL" then .value = $CLIENT_URL else . end
+            .containerDefinitions[0].environment = (
+              .containerDefinitions[0].environment // [] |
+              map(select(.name != "CLIENT_URL")) + [{"name": "CLIENT_URL", "value": $CLIENT_URL}]
             ) |
             del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)
           ' task-def.json > new-task-def.json
+
+          echo "=== Updated Task Definition (CLIENT_URL check) ==="
+          jq '.containerDefinitions[0].environment[] | select(.name == "CLIENT_URL")' new-task-def.json
 
           # Register new task definition
           echo "Registering new task definition..."
@@ -289,5 +293,3 @@ jobs:
             echo "  Task Definition has: $CLIENT_URL_VALUE"
             echo "  Expected: ${{ vars.CLIENT_URL }}"
           fi
-
-          echo "=========================================="
