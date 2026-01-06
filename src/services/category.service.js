@@ -15,18 +15,42 @@ let dynamoDb;
  * Initialize DynamoDB client
  */
 const initDynamoDB = (config) => {
-  const client = new DynamoDBClient({
+  const clientConfig = {
     region: config.region,
-    endpoint: config.endpoint,
-    credentials: {
-      accessKeyId: config.accessKeyId,
-      secretAccessKey: config.secretAccessKey,
-    },
     requestHandler: new NodeHttpHandler({
       http2: false,
     }),
-  });
+  };
 
+  // Only set endpoint if provided (for local development)
+  if (config.endpoint) {
+    clientConfig.endpoint = config.endpoint;
+    console.log('[CategoryService] Using DynamoDB endpoint:', config.endpoint);
+  } else {
+    console.log(
+      '[CategoryService] Using AWS DynamoDB in region:',
+      config.region
+    );
+  }
+
+  // Only set explicit credentials if BOTH are provided and not empty
+  // In ECS, credentials will be automatically obtained from IAM role
+  if (
+    config.accessKeyId &&
+    config.secretAccessKey &&
+    config.accessKeyId.trim() &&
+    config.secretAccessKey.trim()
+  ) {
+    console.log('[CategoryService] Using explicit credentials');
+    clientConfig.credentials = {
+      accessKeyId: config.accessKeyId,
+      secretAccessKey: config.secretAccessKey,
+    };
+  } else {
+    console.log('[CategoryService] Using IAM role credentials');
+  }
+
+  const client = new DynamoDBClient(clientConfig);
   dynamoDb = DynamoDBDocumentClient.from(client);
 };
 

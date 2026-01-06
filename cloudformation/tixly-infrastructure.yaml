@@ -636,12 +636,6 @@ Resources:
               Value: !Ref S3Bucket
             - Name: JWT_SECRET
               Value: !Ref JwtSecret
-            - Name: DYNAMODB_EVENTS_TABLE
-              Value: !Ref DynamoDBEventsTable
-            - Name: DYNAMODB_BOOKINGS_TABLE
-              Value: !Ref DynamoDBBookingsTable
-            - Name: DYNAMODB_USERS_TABLE
-              Value: !Ref DynamoDBUsersTable
             - Name: REDIS_HOST
               Value: !GetAtt ElastiCacheCluster.RedisEndpoint.Address
             - Name: REDIS_PORT
@@ -807,99 +801,6 @@ Resources:
         Name: !Sub '${ProjectName}-api-stage'
 
   #============================================================================
-  # DYNAMODB TABLES (On-Demand billing - pay per request, no minimum)
-  #============================================================================
-  DynamoDBEventsTable:
-    Type: AWS::DynamoDB::Table
-    Properties:
-      TableName: !Sub '${ProjectName}-events'
-      BillingMode: PAY_PER_REQUEST
-      AttributeDefinitions:
-        - AttributeName: id
-          AttributeType: S
-        - AttributeName: category
-          AttributeType: S
-        - AttributeName: createdAt
-          AttributeType: S
-      KeySchema:
-        - AttributeName: id
-          KeyType: HASH
-      GlobalSecondaryIndexes:
-        - IndexName: category-createdAt-index
-          KeySchema:
-            - AttributeName: category
-              KeyType: HASH
-            - AttributeName: createdAt
-              KeyType: RANGE
-          Projection:
-            ProjectionType: ALL
-      Tags:
-        - Key: Name
-          Value: !Sub '${ProjectName}-events-table'
-        - Key: Environment
-          Value: !Ref Environment
-
-  DynamoDBBookingsTable:
-    Type: AWS::DynamoDB::Table
-    Properties:
-      TableName: !Sub '${ProjectName}-bookings'
-      BillingMode: PAY_PER_REQUEST
-      AttributeDefinitions:
-        - AttributeName: id
-          AttributeType: S
-        - AttributeName: eventId
-          AttributeType: S
-        - AttributeName: userId
-          AttributeType: S
-      KeySchema:
-        - AttributeName: id
-          KeyType: HASH
-      GlobalSecondaryIndexes:
-        - IndexName: eventId-index
-          KeySchema:
-            - AttributeName: eventId
-              KeyType: HASH
-          Projection:
-            ProjectionType: ALL
-        - IndexName: userId-index
-          KeySchema:
-            - AttributeName: userId
-              KeyType: HASH
-          Projection:
-            ProjectionType: ALL
-      Tags:
-        - Key: Name
-          Value: !Sub '${ProjectName}-bookings-table'
-        - Key: Environment
-          Value: !Ref Environment
-
-  DynamoDBUsersTable:
-    Type: AWS::DynamoDB::Table
-    Properties:
-      TableName: !Sub '${ProjectName}-users'
-      BillingMode: PAY_PER_REQUEST
-      AttributeDefinitions:
-        - AttributeName: id
-          AttributeType: S
-        - AttributeName: email
-          AttributeType: S
-      KeySchema:
-        - AttributeName: id
-          KeyType: HASH
-      GlobalSecondaryIndexes:
-        - IndexName: email-index
-          KeySchema:
-            - AttributeName: email
-              KeyType: HASH
-          Projection:
-            ProjectionType: ALL
-      Tags:
-        - Key: Name
-          Value: !Sub '${ProjectName}-users-table'
-        - Key: Environment
-          Value: !Ref Environment
-
-  #============================================================================
   # ELASTICACHE (Redis)
   #============================================================================
   ElastiCacheSubnetGroup:
@@ -992,8 +893,6 @@ Resources:
           - !Ref PrivateSubnet2
       Environment:
         Variables:
-          DYNAMODB_EVENTS_TABLE: !Ref DynamoDBEventsTable
-          DYNAMODB_BOOKINGS_TABLE: !Ref DynamoDBBookingsTable
           SNS_TOPIC_ARN: !Ref SNSTopic
       Code:
         ZipFile: |
@@ -1128,24 +1027,6 @@ Outputs:
     Value: !Sub 'https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com'
     Export:
       Name: !Sub '${ProjectName}-api-endpoint'
-
-  DynamoDBEventsTableName:
-    Description: DynamoDB Events Table Name
-    Value: !Ref DynamoDBEventsTable
-    Export:
-      Name: !Sub '${ProjectName}-dynamodb-events'
-
-  DynamoDBBookingsTableName:
-    Description: DynamoDB Bookings Table Name
-    Value: !Ref DynamoDBBookingsTable
-    Export:
-      Name: !Sub '${ProjectName}-dynamodb-bookings'
-
-  DynamoDBUsersTableName:
-    Description: DynamoDB Users Table Name
-    Value: !Ref DynamoDBUsersTable
-    Export:
-      Name: !Sub '${ProjectName}-dynamodb-users'
 
   ElastiCacheEndpoint:
     Description: ElastiCache Redis Endpoint

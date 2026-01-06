@@ -16,30 +16,19 @@ const tableSchema = {
     { AttributeName: 'email', AttributeType: 'S' },
     { AttributeName: 'username', AttributeType: 'S' },
   ],
+  BillingMode: 'PAY_PER_REQUEST',
   GlobalSecondaryIndexes: [
     {
       IndexName: 'EmailIndex',
       KeySchema: [{ AttributeName: 'email', KeyType: 'HASH' }],
       Projection: { ProjectionType: 'ALL' },
-      ProvisionedThroughput: {
-        ReadCapacityUnits: 5,
-        WriteCapacityUnits: 5,
-      },
     },
     {
       IndexName: 'UsernameIndex',
       KeySchema: [{ AttributeName: 'username', KeyType: 'HASH' }],
       Projection: { ProjectionType: 'ALL' },
-      ProvisionedThroughput: {
-        ReadCapacityUnits: 5,
-        WriteCapacityUnits: 5,
-      },
     },
   ],
-  ProvisionedThroughput: {
-    ReadCapacityUnits: 5,
-    WriteCapacityUnits: 5,
-  },
 };
 
 // Validation Schema
