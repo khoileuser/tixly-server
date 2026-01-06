@@ -635,7 +635,7 @@ const seedDatabase = async () => {
     const eventsEmpty = await isTableEmpty('Events');
 
     if (!categoriesEmpty && !eventsEmpty) {
-      console.log('✓ Database already has data, skipping seed');
+      console.log('Database already has data, skipping seed');
       console.log('  Tip: Use --force flag to re-seed: bun seed --force');
       return;
     }

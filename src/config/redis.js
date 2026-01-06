@@ -33,7 +33,7 @@ const connectRedis = () => {
     });
 
     redisClient.on('connect', () => {
-      console.log('✓ Redis connected:', redisHost);
+      console.log('Redis connected:', redisHost);
     });
 
     redisClient.on('error', (err) => {

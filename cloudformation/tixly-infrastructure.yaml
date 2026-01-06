@@ -88,9 +88,7 @@ Conditions:
   HasContainerImage: !Not [!Equals [!Ref ContainerImage, '']]
 
 Resources:
-  #============================================================================
   # S3 BUCKET - Static Website Hosting for Frontend
-  #============================================================================
   S3Bucket:
     Type: AWS::S3::Bucket
     Properties:
@@ -134,9 +132,7 @@ Resources:
             Action: s3:GetObject
             Resource: !Sub 'arn:aws:s3:::${ProjectName}/*'
 
-  #============================================================================
   # COGNITO - User Authentication
-  #============================================================================
   CognitoUserPool:
     Type: AWS::Cognito::UserPool
     Properties:
@@ -207,9 +203,7 @@ Resources:
       UserPoolId: !Ref CognitoUserPool
       Description: Administrator group with elevated privileges
 
-  #============================================================================
   # VPC - Virtual Private Cloud
-  #============================================================================
   VPC:
     Type: AWS::EC2::VPC
     Properties:
@@ -235,9 +229,7 @@ Resources:
       InternetGatewayId: !Ref InternetGateway
       VpcId: !Ref VPC
 
-  #============================================================================
   # SUBNETS
-  #============================================================================
   PublicSubnet1:
     Type: AWS::EC2::Subnet
     Properties:
@@ -282,9 +274,7 @@ Resources:
         - Key: Name
           Value: !Sub '${ProjectName}-private-subnet-1b'
 
-  #============================================================================
   # ROUTE TABLES
-  #============================================================================
   PublicRouteTable:
     Type: AWS::EC2::RouteTable
     Properties:
@@ -341,9 +331,7 @@ Resources:
       RouteTableId: !Ref PrivateRouteTable2
       SubnetId: !Ref PrivateSubnet2
 
-  #============================================================================
   # VPC ENDPOINTS (for private access to AWS services without NAT Gateway)
-  #============================================================================
 
   # Security Group for VPC Endpoints
   VPCEndpointSecurityGroup:
@@ -471,9 +459,7 @@ Resources:
         - !Ref VPCEndpointSecurityGroup
       PrivateDnsEnabled: true
 
-  #============================================================================
   # SECURITY GROUPS
-  #============================================================================
   ALBSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -533,9 +519,7 @@ Resources:
         - Key: Name
           Value: !Sub '${ProjectName}-lambda-sg'
 
-  #============================================================================
   # ECR - Elastic Container Registry
-  #============================================================================
   ECRRepository:
     Type: AWS::ECR::Repository
     Properties:
@@ -567,9 +551,7 @@ Resources:
         - Key: Environment
           Value: !Ref Environment
 
-  #============================================================================
   # ECS - Elastic Container Service (Fargate)
-  #============================================================================
   ECSCluster:
     Type: AWS::ECS::Cluster
     Properties:
@@ -685,9 +667,7 @@ Resources:
         - Key: Name
           Value: !Sub '${ProjectName}-ecs-service'
 
-  #============================================================================
   # APPLICATION LOAD BALANCER
-  #============================================================================
   ApplicationLoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
@@ -732,9 +712,7 @@ Resources:
         - Type: forward
           TargetGroupArn: !Ref ALBTargetGroup
 
-  #============================================================================
   # AUTO SCALING
-  #============================================================================
   ECSAutoScalingTarget:
     Type: AWS::ApplicationAutoScaling::ScalableTarget
     Condition: HasContainerImage
@@ -760,9 +738,7 @@ Resources:
         ScaleInCooldown: 300
         ScaleOutCooldown: 60
 
-  #============================================================================
   # API GATEWAY
-  #============================================================================
   ApiGateway:
     Type: AWS::ApiGatewayV2::Api
     Properties:
@@ -807,9 +783,7 @@ Resources:
       Tags:
         Name: !Sub '${ProjectName}-api-stage'
 
-  #============================================================================
   # ELASTICACHE (Redis)
-  #============================================================================
   ElastiCacheSubnetGroup:
     Type: AWS::ElastiCache::SubnetGroup
     Properties:
@@ -836,9 +810,7 @@ Resources:
         - Key: Environment
           Value: !Ref Environment
 
-  #============================================================================
   # SNS - Simple Notification Service
-  #============================================================================
   SNSTopic:
     Type: AWS::SNS::Topic
     Properties:
@@ -850,9 +822,7 @@ Resources:
         - Key: Environment
           Value: !Ref Environment
 
-  #============================================================================
   # SQS - Simple Queue Service
-  #============================================================================
   SQSQueue:
     Type: AWS::SQS::Queue
     Properties:
@@ -880,9 +850,7 @@ Resources:
         - Key: Environment
           Value: !Ref Environment
 
-  #============================================================================
   # LAMBDA FUNCTION
-  #============================================================================
   LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
@@ -925,9 +893,7 @@ Resources:
       BatchSize: 10
       Enabled: true
 
-  #============================================================================
   # ROUTE 53 (Optional - only created if DomainName is provided)
-  #============================================================================
   Route53HostedZone:
     Type: AWS::Route53::HostedZone
     Condition: HasDomainName
@@ -947,9 +913,7 @@ Resources:
         DNSName: !GetAtt ApplicationLoadBalancer.DNSName
         HostedZoneId: !GetAtt ApplicationLoadBalancer.CanonicalHostedZoneID
 
-#============================================================================
 # OUTPUTS
-#============================================================================
 Outputs:
   VPCId:
     Description: VPC ID

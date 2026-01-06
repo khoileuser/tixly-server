@@ -85,7 +85,7 @@ const getEventById = async (eventId) => {
     // Try cache first
     const cacheKey = `event:${eventId}`;
     const cachedEvent = await cache.get(cacheKey);
-    
+
     if (cachedEvent) {
       console.log(`[EventService] Cache HIT for event: ${eventId}`);
       return {
@@ -138,9 +138,11 @@ const getAllEvents = async (filters = {}) => {
     } = filters;
 
     // Create cache key based on filters
-    const cacheKey = `events:all:${status || 'all'}:${categoryId || 'all'}:${limit}:${includeUnpublished}`;
+    const cacheKey = `events:all:${status || 'all'}:${
+      categoryId || 'all'
+    }:${limit}:${includeUnpublished}`;
     const cachedEvents = await cache.get(cacheKey);
-    
+
     if (cachedEvents) {
       console.log(`[EventService] Cache HIT for events list`);
       return {
@@ -205,7 +207,7 @@ const getAllEvents = async (filters = {}) => {
     events = events.slice(0, limit);
 
     // Cache the results (cache raw data, not enriched)
-    const rawEvents = events.map(e => {
+    const rawEvents = events.map((e) => {
       const { timeStatus, availableSeats, isBookable, ...raw } = e;
       return raw;
     });
@@ -809,7 +811,9 @@ const deleteEvent = async (eventId) => {
     // Invalidate cache for this event and all events lists
     await cache.del(`event:${eventId}`);
     await cache.delPattern('events:all:*');
-    console.log(`[EventService] Invalidated cache for deleted event: ${eventId}`);
+    console.log(
+      `[EventService] Invalidated cache for deleted event: ${eventId}`
+    );
 
     return {
       success: true,

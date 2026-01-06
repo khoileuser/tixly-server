@@ -33,23 +33,8 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Get Cognito Client Secret from CloudFormation
-        id: get-cognito-secret
-        run: |
-          COGNITO_CLIENT_SECRET=$(aws cloudformation describe-stacks \
-            --stack-name tixly-infrastructure \
-            --query "Stacks[0].Outputs[?OutputKey=='CognitoUserPoolClientSecret'].OutputValue" \
-            --output text)
-          echo "::add-mask::$COGNITO_CLIENT_SECRET"
-          echo "cognito_client_secret=$COGNITO_CLIENT_SECRET" >> $GITHUB_OUTPUT
-
       - name: Create .env file
         run: |
-          echo "Configuration Values (Debug)"
-          echo "CLIENT_URL: ${{ vars.CLIENT_URL }}"
-          echo "DYNAMODB_ENDPOINT: ${{ vars.DYNAMODB_ENDPOINT }}"
-          echo "S3_BUCKET_NAME: ${{ vars.S3_BUCKET_NAME }}"
-
           cat > .env << EOF
           # Server Configuration
           HOST=0.0.0.0
@@ -63,21 +48,12 @@ jobs:
           # AWS Configuration (Region only - credentials will use IAM role in ECS)
           AWS_REGION=${{ env.AWS_REGION }}
 
-          # Cognito Configuration
-          COGNITO_USER_POOL_ID=${{ secrets.COGNITO_USER_POOL_ID }}
-          COGNITO_CLIENT_ID=${{ secrets.COGNITO_CLIENT_ID }}
-          COGNITO_CLIENT_SECRET=${{ steps.get-cognito-secret.outputs.cognito_client_secret }}
-
           # S3 Configuration
           S3_BUCKET_NAME=${{ vars.S3_BUCKET_NAME }}
 
           # JWT Configuration
           JWT_SECRET=${{ secrets.JWT_SECRET }}
           EOF
-
-          echo ""
-          echo "Generated .env file"
-          cat .env | grep -v "SECRET\|KEY_ID\|ACCESS_KEY\|SESSION_TOKEN"
 
       - name: Build, tag, and push image to Amazon ECR
         id: build-image
@@ -95,10 +71,6 @@ jobs:
 
           # Output the image URI
           echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
-
-      - name: Print image URI
-        run: |
-          echo "Image pushed to: ${{ steps.build-image.outputs.image }}"
 
   deploy:
     name: Deploy to ECS
@@ -143,7 +115,6 @@ jobs:
 
           # Get the container image URI
           CONTAINER_IMAGE="${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"
-          echo "Container Image: $CONTAINER_IMAGE"
 
           aws cloudformation update-stack \
             --stack-name tixly-infrastructure \
@@ -167,8 +138,6 @@ jobs:
 
           # Get the container image URI
           CONTAINER_IMAGE="${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"
-          echo "Container Image: $CONTAINER_IMAGE"
-          echo "Client URL: ${{ vars.CLIENT_URL }}"
 
           # Get the current task definition ARN from the running service
           echo "Getting current task definition from service..."
@@ -177,8 +146,6 @@ jobs:
             --services ${{ env.ECS_SERVICE }} \
             --query 'services[0].taskDefinition' \
             --output text)
-
-          echo "Current Task Definition ARN: $CURRENT_TASK_DEF_ARN"
 
           # Get current task definition and save to file
           aws ecs describe-task-definition \
@@ -199,7 +166,7 @@ jobs:
             del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)
           ' task-def.json > new-task-def.json
 
-          echo "=== Updated Task Definition (Environment Variables) ==="
+          echo "Updated Task Definition"
           jq '.containerDefinitions[0].environment[] | select(.name == "CLIENT_URL")' new-task-def.json
 
           # Register new task definition
@@ -209,8 +176,6 @@ jobs:
             --query 'taskDefinition.taskDefinitionArn' \
             --output text)
 
-          echo "New Task Definition: $NEW_TASK_DEF_ARN"
-
           # Update service with new task definition
           echo "Updating ECS service with new task definition..."
           aws ecs update-service \
@@ -219,74 +184,4 @@ jobs:
             --task-definition $NEW_TASK_DEF_ARN \
             --force-new-deployment
 
-          echo "Deployment initiated. Checking deployment status..."
-
-          # Wait a bit for deployment to start
-          sleep 10
-
-          # Check for any stopped tasks with errors
-          echo "Checking for task failures..."
-          STOPPED_TASKS=$(aws ecs list-tasks \
-            --cluster ${{ env.ECS_CLUSTER }} \
-            --service-name ${{ env.ECS_SERVICE }} \
-            --desired-status STOPPED \
-            --query 'taskArns[0]' \
-            --output text)
-
-          if [ "$STOPPED_TASKS" != "None" ] && [ ! -z "$STOPPED_TASKS" ]; then
-            echo "Found stopped task: $STOPPED_TASKS"
-            echo "Task details:"
-            aws ecs describe-tasks \
-              --cluster ${{ env.ECS_CLUSTER }} \
-              --tasks $STOPPED_TASKS \
-              --query 'tasks[0].{StoppedReason:stoppedReason,Containers:containers[0].{Reason:reason,ExitCode:exitCode}}'
-          fi
-
-          # Check service events for errors
-          echo "Recent service events:"
-          aws ecs describe-services \
-            --cluster ${{ env.ECS_CLUSTER }} \
-            --services ${{ env.ECS_SERVICE }} \
-            --query 'services[0].events[:5]' \
-            --output table
-
-          echo ""
-          echo "Deployment status updated. The service will continue deploying in the background."
-          echo "Check CloudWatch logs for container startup: /ecs/tixly-backend"
-          echo "Monitor deployment at: https://console.aws.amazon.com/ecs/v2/clusters/${{ env.ECS_CLUSTER }}/services/${{ env.ECS_SERVICE }}"
-
-          # Try to get recent logs
-          echo ""
-          echo "=== Recent Container Logs ==="
-          aws logs tail /ecs/tixly-backend --since 2m --format short 2>/dev/null || echo "No recent logs available yet"
-
-      - name: Verify ECS Task Configuration
-        if: steps.check-ecs.outputs.service_exists == 'true'
-        run: |
-          echo "=== Verifying ECS Task Definition Configuration ==="
-
-          # Get the current task definition ARN
-          TASK_DEF_ARN=$(aws ecs describe-services \
-            --cluster ${{ env.ECS_CLUSTER }} \
-            --services ${{ env.ECS_SERVICE }} \
-            --query 'services[0].taskDefinition' \
-            --output text)
-
-          echo "Current Task Definition: $TASK_DEF_ARN"
-
-          # Extract CLIENT_URL from task definition
-          CLIENT_URL_VALUE=$(aws ecs describe-task-definition \
-            --task-definition $TASK_DEF_ARN \
-            --query 'taskDefinition.containerDefinitions[0].environment[?name==`CLIENT_URL`].value' \
-            --output text)
-
-          echo "CLIENT_URL in Task Definition: $CLIENT_URL_VALUE"
-          echo "Expected CLIENT_URL: ${{ vars.CLIENT_URL }}"
-
-          if [ "$CLIENT_URL_VALUE" = "${{ vars.CLIENT_URL }}" ]; then
-            echo "✓ CLIENT_URL is correctly configured!"
-          else
-            echo "✗ WARNING: CLIENT_URL mismatch!"
-            echo "  Task Definition has: $CLIENT_URL_VALUE"
-            echo "  Expected: ${{ vars.CLIENT_URL }}"
-          fi
+          echo "Deployment initiated successfully!"
