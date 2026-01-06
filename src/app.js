@@ -72,10 +72,9 @@ const startServer = async () => {
 
     // Enable CORS for all routes
     // Allow S3 static website and localhost
-    const allowedOrigins = [
-      'http://localhost:3000',
-      process.env.CLIENT_URL,
-    ].filter(Boolean); // Remove undefined values
+    const allowedOrigins = ['http://localhost:3000', env.clientUrl].filter(
+      Boolean
+    );
 
     app.use(
       cors({
@@ -89,7 +88,6 @@ const startServer = async () => {
           ) {
             callback(null, true);
           } else {
-            console.log('Blocked origin:', origin);
             callback(new Error('Not allowed by CORS'));
           }
         },
