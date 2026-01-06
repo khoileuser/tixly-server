@@ -1,4 +1,4 @@
-name: Build and Deploy to AWS ECR
+name: Build and Push to AWS ECR
 
 on:
   push:
@@ -125,7 +125,8 @@ jobs:
               ParameterKey=Environment,UsePreviousValue=true \
               ParameterKey=ContainerImage,ParameterValue=$CONTAINER_IMAGE \
               ParameterKey=ClientUrl,ParameterValue=${{ vars.CLIENT_URL }} \
-              ParameterKey=JwtSecret,ParameterValue=${{ secrets.JWT_SECRET }}
+              ParameterKey=JwtSecret,ParameterValue=${{ secrets.JWT_SECRET }} \
+              ParameterKey=DesiredCount,ParameterValue=2
 
           echo "Waiting for stack update to complete..."
           aws cloudformation wait stack-update-complete --stack-name tixly-infrastructure
