@@ -33,6 +33,49 @@ jobs:
               id: login-ecr
               uses: aws-actions/amazon-ecr-login@v2
 
+            - name: Get Cognito Client Secret from CloudFormation
+              id: get-cognito-secret
+              run: |
+                  COGNITO_CLIENT_SECRET=$(aws cloudformation describe-stacks \
+                    --stack-name tixly-infrastructure \
+                    --query "Stacks[0].Outputs[?OutputKey=='CognitoUserPoolClientSecret'].OutputValue" \
+                    --output text)
+                  echo "::add-mask::$COGNITO_CLIENT_SECRET"
+                  echo "cognito_client_secret=$COGNITO_CLIENT_SECRET" >> $GITHUB_OUTPUT
+
+            - name: Create .env file
+              run: |
+                  cat > .env << EOF
+                  # Server Configuration
+                  HOST=0.0.0.0
+                  PORT=8080
+                  NODE_ENV=production
+                  CLIENT_URL=${{ secrets.CLIENT_URL }}
+
+                  # Booking Configuration
+                  BOOKING_TIMEOUT_MINUTES=10
+
+                  # AWS Configuration
+                  AWS_REGION=${{ env.AWS_REGION }}
+                  AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}
+                  AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}
+                  AWS_SESSION_TOKEN=${{ secrets.AWS_SESSION_TOKEN }}
+
+                  # DynamoDB Configuration
+                  DYNAMODB_ENDPOINT=${{ secrets.DYNAMODB_ENDPOINT }}
+
+                  # Cognito Configuration
+                  COGNITO_USER_POOL_ID=${{ secrets.COGNITO_USER_POOL_ID }}
+                  COGNITO_CLIENT_ID=${{ secrets.COGNITO_CLIENT_ID }}
+                  COGNITO_CLIENT_SECRET=${{ steps.get-cognito-secret.outputs.cognito_client_secret }}
+
+                  # S3 Configuration
+                  S3_BUCKET_NAME=${{ secrets.S3_BUCKET_NAME }}
+
+                  # JWT Configuration
+                  JWT_SECRET=${{ secrets.JWT_SECRET }}
+                  EOF
+
             - name: Build, tag, and push image to Amazon ECR
               id: build-image
               env:

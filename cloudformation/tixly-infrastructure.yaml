@@ -171,7 +171,7 @@ Resources:
     Properties:
       ClientName: !Ref ProjectName
       UserPoolId: !Ref CognitoUserPool
-      GenerateSecret: false
+      GenerateSecret: true
       ExplicitAuthFlows:
         - ALLOW_USER_PASSWORD_AUTH
         - ALLOW_USER_SRP_AUTH
@@ -1069,6 +1069,12 @@ Outputs:
     Value: !Ref CognitoUserPoolClient
     Export:
       Name: !Sub '${ProjectName}-cognito-client-id'
+
+  CognitoUserPoolClientSecret:
+    Description: Cognito User Pool Client Secret
+    Value: !GetAtt CognitoUserPoolClient.ClientSecret
+    Export:
+      Name: !Sub '${ProjectName}-cognito-client-secret'
 
   ECRRepositoryUri:
     Description: ECR Repository URI
