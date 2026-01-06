@@ -20,13 +20,41 @@ const crypto = require('crypto');
 const env = require('../config/env');
 const { UserModel } = require('../models');
 
-const cognitoClient = new CognitoIdentityProviderClient({
+// Create Cognito client configuration
+const cognitoClientConfig = {
   region: env.aws.region,
-  credentials: {
-    accessKeyId: env.aws.awsAccessKeyId,
-    secretAccessKey: env.aws.awsSecretAccessKey,
-  },
-});
+};
+
+// Only set credentials if they are non-empty strings (for local dev)
+// In ECS, credentials will be undefined and IAM role will be used
+const accessKeyId = env.aws.awsAccessKeyId;
+const secretAccessKey = env.aws.awsSecretAccessKey;
+const sessionToken = env.aws.awsSessionToken;
+
+if (
+  accessKeyId &&
+  secretAccessKey &&
+  accessKeyId.trim() &&
+  secretAccessKey.trim()
+) {
+  cognitoClientConfig.credentials = {
+    accessKeyId,
+    secretAccessKey,
+  };
+
+  // Add session token if provided (for temporary credentials)
+  if (sessionToken && sessionToken.trim()) {
+    cognitoClientConfig.credentials.sessionToken = sessionToken;
+  }
+
+  console.log('Cognito client using explicit credentials');
+} else {
+  console.log(
+    'Cognito client using IAM role credentials (no explicit credentials provided)'
+  );
+}
+
+const cognitoClient = new CognitoIdentityProviderClient(cognitoClientConfig);
 
 /**
  * Calculate SECRET_HASH for Cognito requests

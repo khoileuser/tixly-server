@@ -60,14 +60,8 @@ jobs:
           # Booking Configuration
           BOOKING_TIMEOUT_MINUTES=10
 
-          # AWS Configuration
+          # AWS Configuration (Region only - credentials will use IAM role in ECS)
           AWS_REGION=${{ env.AWS_REGION }}
-          AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_SESSION_TOKEN=${{ secrets.AWS_SESSION_TOKEN }}
-
-          # DynamoDB Configuration
-          DYNAMODB_ENDPOINT=${{ vars.DYNAMODB_ENDPOINT }}
 
           # Cognito Configuration
           COGNITO_USER_POOL_ID=${{ secrets.COGNITO_USER_POOL_ID }}
