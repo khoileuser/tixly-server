@@ -183,6 +183,7 @@ jobs:
             --cluster ${{ env.ECS_CLUSTER }} \
             --service ${{ env.ECS_SERVICE }} \
             --task-definition $NEW_TASK_DEF_ARN \
+            --desired-count 2 \
             --force-new-deployment
 
           echo "Deployment initiated successfully!"
