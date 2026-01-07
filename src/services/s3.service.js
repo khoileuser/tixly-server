@@ -13,20 +13,38 @@ let bucketName;
  * Initialize S3 client
  */
 const initS3 = (config) => {
-  const credentials = {
-    accessKeyId: config.accessKeyId,
-    secretAccessKey: config.secretAccessKey,
+  const s3ClientConfig = {
+    region: config.region,
   };
 
-  // Add session token if provided (for temporary credentials)
-  if (config.sessionToken) {
-    credentials.sessionToken = config.sessionToken;
+  // Only set credentials if they are non-empty strings (for local dev)
+  // In ECS, credentials will be undefined and IAM role will be used
+  const accessKeyId = config.accessKeyId;
+  const secretAccessKey = config.secretAccessKey;
+  const sessionToken = config.sessionToken;
+
+  if (
+    accessKeyId &&
+    secretAccessKey &&
+    accessKeyId.trim() &&
+    secretAccessKey.trim()
+  ) {
+    s3ClientConfig.credentials = {
+      accessKeyId,
+      secretAccessKey,
+    };
+
+    // Add session token if provided (for temporary credentials)
+    if (sessionToken && sessionToken.trim()) {
+      s3ClientConfig.credentials.sessionToken = sessionToken;
+    }
+
+    console.log('S3 client using explicit credentials');
+  } else {
+    console.log('S3 client using IAM role credentials');
   }
 
-  s3Client = new S3Client({
-    region: config.region,
-    credentials,
-  });
+  s3Client = new S3Client(s3ClientConfig);
   bucketName = config.s3BucketName;
 };
 
@@ -42,6 +60,10 @@ const uploadImage = async (fileBuffer, fileName, mimeType) => {
     if (!s3Client || !bucketName) {
       throw new Error('S3 client not initialized');
     }
+
+    console.log(
+      `[S3] Uploading image: ${fileName}, type: ${mimeType}, size: ${fileBuffer.length} bytes`
+    );
 
     // Generate unique file name
     const fileExtension = fileName.split('.').pop();
@@ -59,6 +81,8 @@ const uploadImage = async (fileBuffer, fileName, mimeType) => {
     // Construct the public URL
     const imageUrl = `https://${bucketName}.s3.amazonaws.com/${uniqueFileName}`;
 
+    console.log(`[S3] Upload successful: ${imageUrl}`);
+
     return {
       success: true,
       data: {
@@ -67,7 +91,7 @@ const uploadImage = async (fileBuffer, fileName, mimeType) => {
       },
     };
   } catch (error) {
-    console.error('Error uploading image to S3:', error);
+    console.error('[S3] Error uploading image:', error);
     return {
       success: false,
       message: error.message || 'Failed to upload image',
