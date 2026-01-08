@@ -829,49 +829,6 @@ Resources:
       Tags:
         Name: !Sub '${ProjectName}-api-stage'
 
-  # API Gateway Custom Domain (Optional - only created if DomainName is provided)
-  ApiGatewayDomainName:
-    Type: AWS::ApiGatewayV2::DomainName
-    Condition: HasDomainName
-    Properties:
-      DomainName: !Sub 'api.${DomainName}'
-      DomainNameConfigurations:
-        - EndpointType: REGIONAL
-          CertificateArn: !Ref ApiGatewayCertificate
-
-  ApiGatewayApiMapping:
-    Type: AWS::ApiGatewayV2::ApiMapping
-    Condition: HasDomainName
-    Properties:
-      ApiId: !Ref ApiGateway
-      DomainName: !Ref ApiGatewayDomainName
-      Stage: !Ref ApiGatewayStage
-
-  # ACM Certificate for API Gateway Custom Domain
-  # NOTE: This requires the domain to be pointed to Route53 nameservers
-  # The certificate will remain in "Pending validation" until:
-  # 1. Route53 hosted zone is created (done automatically)
-  # 2. Domain nameservers are updated to point to Route53 (manual step)
-  # 3. DNS propagation completes (5-30 minutes after nameserver update)
-  # DeletionPolicy: Retain preserves the certificate to avoid re-validation on stack recreate
-  ApiGatewayCertificate:
-    Type: AWS::CertificateManager::Certificate
-    Condition: HasDomainName
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
-    Properties:
-      DomainName: !Sub 'api.${DomainName}'
-      ValidationMethod: DNS
-      DomainValidationOptions:
-        - DomainName: !Sub 'api.${DomainName}'
-          HostedZoneId: !If
-            - UseExistingHostedZone
-            - !Ref ExistingHostedZoneId
-            - !Ref Route53HostedZone
-      Tags:
-        - Key: Name
-          Value: !Sub '${ProjectName}-api-certificate'
-
   # ELASTICACHE (Redis)
   ElastiCacheSubnetGroup:
     Type: AWS::ElastiCache::SubnetGroup
@@ -995,21 +952,6 @@ Resources:
       HostedZoneConfig:
         Comment: !Sub 'Hosted zone for ${ProjectName}'
 
-  # Route53 Record for API (points to API Gateway)
-  Route53ApiRecordSet:
-    Type: AWS::Route53::RecordSet
-    Condition: HasDomainName
-    Properties:
-      HostedZoneId: !If
-        - UseExistingHostedZone
-        - !Ref ExistingHostedZoneId
-        - !Ref Route53HostedZone
-      Name: !Sub 'api.${DomainName}'
-      Type: A
-      AliasTarget:
-        DNSName: !GetAtt ApiGatewayDomainName.RegionalDomainName
-        HostedZoneId: !GetAtt ApiGatewayDomainName.RegionalHostedZoneId
-
   # Route53 Record for Client (points to S3 website)
   Route53ClientRecordSet:
     Type: AWS::Route53::RecordSet
@@ -1090,13 +1032,6 @@ Outputs:
     Export:
       Name: !Sub '${ProjectName}-client-domain-url'
 
-  ApiDomainURL:
-    Condition: HasDomainName
-    Description: API Domain URL (Route53)
-    Value: !Sub 'https://api.${DomainName}'
-    Export:
-      Name: !Sub '${ProjectName}-api-domain-url'
-
   Route53NameServers:
     Condition: CreateNewHostedZone
     Description: Route53 Nameservers - Update your domain registrar to use these nameservers (only shown for NEW hosted zones)
@@ -1109,11 +1044,6 @@ Outputs:
       - UseExistingHostedZone
       - !Ref ExistingHostedZoneId
       - !Ref Route53HostedZone
-
-  CertificateValidationStatus:
-    Condition: HasDomainName
-    Description: Certificate will validate automatically once domain nameservers point to Route53
-    Value: !Sub 'Check ACM console for certificate status for api.${DomainName}'
 
   CognitoUserPoolId:
     Description: Cognito User Pool ID
@@ -1152,17 +1082,10 @@ Outputs:
       Name: !Sub '${ProjectName}-alb-dns'
 
   ApiGatewayEndpoint:
-    Description: API Gateway Endpoint
+    Description: API Gateway Endpoint (use this as your API URL)
     Value: !Sub 'https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com'
     Export:
       Name: !Sub '${ProjectName}-api-endpoint'
-
-  ApiGatewayCustomDomain:
-    Condition: HasDomainName
-    Description: API Gateway Custom Domain (via Route53)
-    Value: !Sub 'https://api.${DomainName}'
-    Export:
-      Name: !Sub '${ProjectName}-api-custom-domain'
 
   ElastiCacheEndpoint:
     Description: ElastiCache Redis Endpoint
