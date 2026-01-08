@@ -21,6 +21,11 @@ Parameters:
     Default: 'tixly.online'
     Description: Domain name for Route 53 (optional)
 
+  ExistingHostedZoneId:
+    Type: String
+    Default: 'Z017984624PBLA3WEROBF'
+    Description: Optional - Existing Route53 Hosted Zone ID to use instead of creating new one
+
   VpcCidr:
     Type: String
     Default: 10.0.0.0/16
@@ -86,6 +91,12 @@ Parameters:
 Conditions:
   HasDomainName: !Not [!Equals [!Ref DomainName, '']]
   HasContainerImage: !Not [!Equals [!Ref ContainerImage, '']]
+  CreateNewHostedZone: !And
+    - !Condition HasDomainName
+    - !Equals [!Ref ExistingHostedZoneId, '']
+  UseExistingHostedZone: !And
+    - !Condition HasDomainName
+    - !Not [!Equals [!Ref ExistingHostedZoneId, '']]
 
 Resources:
   # S3 BUCKET - Static Website Hosting for Frontend
@@ -846,7 +857,6 @@ Resources:
   ApiGatewayCertificate:
     Type: AWS::CertificateManager::Certificate
     Condition: HasDomainName
-    DependsOn: Route53HostedZone
     DeletionPolicy: Retain
     UpdateReplacePolicy: Retain
     Properties:
@@ -854,7 +864,10 @@ Resources:
       ValidationMethod: DNS
       DomainValidationOptions:
         - DomainName: !Sub 'api.${DomainName}'
-          HostedZoneId: !Ref Route53HostedZone
+          HostedZoneId: !If
+            - UseExistingHostedZone
+            - !Ref ExistingHostedZoneId
+            - !Ref Route53HostedZone
       Tags:
         - Key: Name
           Value: !Sub '${ProjectName}-api-certificate'
@@ -969,12 +982,12 @@ Resources:
       BatchSize: 10
       Enabled: true
 
-  # ROUTE 53 (Optional - only created if DomainName is provided)
+  # ROUTE 53 (Optional - only created if DomainName is provided AND no existing hosted zone)
   # DeletionPolicy: Retain ensures the hosted zone is NOT deleted when stack is deleted
   # This preserves the nameservers so you don't need to update your domain registrar again
   Route53HostedZone:
     Type: AWS::Route53::HostedZone
-    Condition: HasDomainName
+    Condition: CreateNewHostedZone
     DeletionPolicy: Retain
     UpdateReplacePolicy: Retain
     Properties:
@@ -987,7 +1000,10 @@ Resources:
     Type: AWS::Route53::RecordSet
     Condition: HasDomainName
     Properties:
-      HostedZoneId: !Ref Route53HostedZone
+      HostedZoneId: !If
+        - UseExistingHostedZone
+        - !Ref ExistingHostedZoneId
+        - !Ref Route53HostedZone
       Name: !Sub 'api.${DomainName}'
       Type: A
       AliasTarget:
@@ -999,7 +1015,10 @@ Resources:
     Type: AWS::Route53::RecordSet
     Condition: HasDomainName
     Properties:
-      HostedZoneId: !Ref Route53HostedZone
+      HostedZoneId: !If
+        - UseExistingHostedZone
+        - !Ref ExistingHostedZoneId
+        - !Ref Route53HostedZone
       Name: !Ref DomainName
       Type: A
       AliasTarget:
@@ -1079,9 +1098,17 @@ Outputs:
       Name: !Sub '${ProjectName}-api-domain-url'
 
   Route53NameServers:
-    Condition: HasDomainName
-    Description: Route53 Nameservers - Update your domain registrar to use these nameservers
+    Condition: CreateNewHostedZone
+    Description: Route53 Nameservers - Update your domain registrar to use these nameservers (only shown for NEW hosted zones)
     Value: !Join [', ', !GetAtt Route53HostedZone.NameServers]
+
+  Route53HostedZoneId:
+    Condition: HasDomainName
+    Description: Route53 Hosted Zone ID (use this for ExistingHostedZoneId parameter on redeployment)
+    Value: !If
+      - UseExistingHostedZone
+      - !Ref ExistingHostedZoneId
+      - !Ref Route53HostedZone
 
   CertificateValidationStatus:
     Condition: HasDomainName
