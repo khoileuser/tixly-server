@@ -13,8 +13,63 @@ env:
   CONTAINER_NAME: tixly-container
 
 jobs:
+  setup-infrastructure:
+    name: Setup Infrastructure
+    runs-on: ubuntu-latest
+    outputs:
+      stack_exists: ${{ steps.check-stack.outputs.stack_exists }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Check if CloudFormation stack exists
+        id: check-stack
+        run: |
+          # Check if CloudFormation stack exists
+          if aws cloudformation describe-stacks --stack-name tixly-infrastructure --query 'Stacks[0].StackStatus' --output text 2>/dev/null; then
+            echo "stack_exists=true" >> $GITHUB_OUTPUT
+            echo "CloudFormation stack exists"
+          else
+            echo "stack_exists=false" >> $GITHUB_OUTPUT
+            echo "CloudFormation stack does not exist"
+          fi
+
+      - name: Create CloudFormation stack (without container image)
+        if: steps.check-stack.outputs.stack_exists == 'false'
+        run: |
+          echo "Creating CloudFormation stack without container image..."
+
+          aws cloudformation create-stack \
+            --stack-name tixly-infrastructure \
+            --template-body file://cloudformation/tixly-infrastructure.yaml \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --parameters \
+              ParameterKey=ProjectName,ParameterValue=tixly \
+              ParameterKey=Environment,ParameterValue=production \
+              ParameterKey=ClientUrl,ParameterValue=${{ vars.CLIENT_URL }} \
+              ParameterKey=JwtSecret,ParameterValue=${{ secrets.JWT_SECRET }} \
+              ParameterKey=DesiredCount,ParameterValue=0 \
+            --tags \
+              Key=Project,Value=Tixly \
+              Key=Environment,Value=production \
+              Key=ManagedBy,Value=CloudFormation
+
+          echo "Waiting for stack creation to complete..."
+          aws cloudformation wait stack-create-complete --stack-name tixly-infrastructure
+          echo "Stack created successfully! ECR repository is now available."
+
   build-and-push:
     name: Build and Push Docker Image
+    needs: setup-infrastructure
     runs-on: ubuntu-latest
 
     steps:
@@ -74,7 +129,7 @@ jobs:
 
   deploy:
     name: Deploy to ECS
-    needs: build-and-push
+    needs: [setup-infrastructure, build-and-push]
     runs-on: ubuntu-latest
 
     steps:
@@ -93,48 +148,8 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Check if CloudFormation stack exists
-        id: check-stack
-        run: |
-          # Check if CloudFormation stack exists
-          if aws cloudformation describe-stacks --stack-name tixly-infrastructure --query 'Stacks[0].StackStatus' --output text 2>/dev/null; then
-            echo "stack_exists=true" >> $GITHUB_OUTPUT
-            echo "CloudFormation stack exists"
-          else
-            echo "stack_exists=false" >> $GITHUB_OUTPUT
-            echo "CloudFormation stack does not exist"
-          fi
-
-      - name: Create CloudFormation stack
-        if: steps.check-stack.outputs.stack_exists == 'false'
-        run: |
-          echo "Creating CloudFormation stack..."
-
-          # Get the container image URI
-          CONTAINER_IMAGE="${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"
-
-          aws cloudformation create-stack \
-            --stack-name tixly-infrastructure \
-            --template-body file://cloudformation/tixly-infrastructure.yaml \
-            --capabilities CAPABILITY_NAMED_IAM \
-            --parameters \
-              ParameterKey=ProjectName,ParameterValue=tixly \
-              ParameterKey=Environment,ParameterValue=production \
-              ParameterKey=ContainerImage,ParameterValue=$CONTAINER_IMAGE \
-              ParameterKey=ClientUrl,ParameterValue=${{ vars.CLIENT_URL }} \
-              ParameterKey=JwtSecret,ParameterValue=${{ secrets.JWT_SECRET }} \
-              ParameterKey=DesiredCount,ParameterValue=2 \
-            --tags \
-              Key=Project,Value=Tixly \
-              Key=Environment,Value=production \
-              Key=ManagedBy,Value=CloudFormation
-
-          echo "Waiting for stack creation to complete..."
-          aws cloudformation wait stack-create-complete --stack-name tixly-infrastructure
-          echo "Stack created successfully!"
-
       - name: Detect CloudFormation template changes
-        if: steps.check-stack.outputs.stack_exists == 'true'
+        if: needs.setup-infrastructure.outputs.stack_exists == 'true'
         id: template-changes
         run: |
           echo "Checking for CloudFormation template changes..."
@@ -213,7 +228,7 @@ jobs:
           fi
 
       - name: Execute CloudFormation change set
-        if: steps.check-stack.outputs.stack_exists == 'true' && steps.template-changes.outputs.has_changes == 'true'
+        if: needs.setup-infrastructure.outputs.stack_exists == 'true' && steps.template-changes.outputs.has_changes == 'true'
         run: |
           echo "Executing CloudFormation change set..."
 
@@ -244,7 +259,7 @@ jobs:
           fi
 
       - name: Update CloudFormation Stack (First Deployment)
-        if: steps.check-ecs.outputs.service_exists == 'false' && steps.check-stack.outputs.stack_exists == 'true' && steps.template-changes.outputs.has_changes != 'true'
+        if: steps.check-ecs.outputs.service_exists == 'false' && needs.setup-infrastructure.outputs.stack_exists == 'true' && steps.template-changes.outputs.has_changes != 'true'
         run: |
           echo "ECS service doesn't exist. Updating CloudFormation stack with container image..."
 
