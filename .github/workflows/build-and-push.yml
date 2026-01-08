@@ -18,6 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       stack_exists: ${{ steps.check-stack.outputs.stack_exists }}
+      stack_was_created: ${{ steps.mark-stack-created.outputs.stack_was_created }}
 
     steps:
       - name: Checkout code
@@ -66,6 +67,47 @@ jobs:
           echo "Waiting for stack creation to complete..."
           aws cloudformation wait stack-create-complete --stack-name tixly-infrastructure
           echo "Stack created successfully! ECR repository is now available."
+
+      - name: Mark stack created
+        id: mark-stack-created
+        if: steps.check-stack.outputs.stack_exists == 'false'
+        run: |
+          echo "stack_was_created=true" >> $GITHUB_OUTPUT
+
+      - name: Update client repo secrets (propagate AWS temp creds + API URL)
+        if: steps.check-stack.outputs.stack_exists == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.CLIENT_REPO_GH_TOKEN }}
+          CLIENT_REPO: ${{ vars.CLIENT_REPO }}
+          AWS_REGION: ${{ env.AWS_REGION }}
+        run: |
+          if [ -z "$GH_TOKEN" ] || [ -z "$CLIENT_REPO" ]; then
+            echo "CLIENT_REPO_GH_TOKEN or CLIENT_REPO not set; skipping client secret update"
+            exit 0
+          fi
+
+          echo "Installing gh CLI..."
+          sudo apt-get update -y && sudo apt-get install -y gh
+
+          echo "Retrieving outputs from CloudFormation stack..."
+          NEXT_PUBLIC_API_URL=$(aws cloudformation describe-stacks --stack-name tixly-infrastructure --query "Stacks[0].Outputs[?OutputKey=='ApiGatewayEndpoint'].OutputValue" --output text)
+          S3_BUCKET_NAME=$(aws cloudformation describe-stacks --stack-name tixly-infrastructure --query "Stacks[0].Outputs[?OutputKey=='S3BucketName'].OutputValue" --output text)
+
+          echo "NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL"
+          echo "S3_BUCKET_NAME=$S3_BUCKET_NAME"
+
+          export GH_TOKEN="$GH_TOKEN"
+
+          echo "Updating secrets and variables in $CLIENT_REPO"
+          gh secret set AWS_ACCESS_KEY_ID --repo "$CLIENT_REPO" --body "$AWS_ACCESS_KEY_ID"
+          gh secret set AWS_SECRET_ACCESS_KEY --repo "$CLIENT_REPO" --body "$AWS_SECRET_ACCESS_KEY"
+          gh secret set AWS_SESSION_TOKEN --repo "$CLIENT_REPO" --body "$AWS_SESSION_TOKEN"
+          gh variable set NEXT_PUBLIC_API_URL --repo "$CLIENT_REPO" --body "$NEXT_PUBLIC_API_URL"
+          gh variable set S3_BUCKET_NAME --repo "$CLIENT_REPO" --body "$S3_BUCKET_NAME"
+
+          echo "Triggering client repo workflow..."
+          gh workflow run "Build and Push to AWS S3" --repo "$CLIENT_REPO" --ref main
+          echo "Client repo workflow triggered successfully!"
 
   build-and-push:
     name: Build and Push Docker Image

@@ -99,11 +99,11 @@ Conditions:
     - !Not [!Equals [!Ref ExistingHostedZoneId, '']]
 
 Resources:
-  # S3 BUCKET - Static Website Hosting for Frontend
+  # S3 BUCKET - Domain-named bucket for website hosting (serves content directly)
   S3Bucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Ref ProjectName
+      BucketName: !Ref DomainName
       VersioningConfiguration:
         Status: Enabled
       WebsiteConfiguration:
@@ -134,41 +134,6 @@ Resources:
     Type: AWS::S3::BucketPolicy
     Properties:
       Bucket: !Ref S3Bucket
-      PolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Sid: PublicReadGetObject
-            Effect: Allow
-            Principal: '*'
-            Action: s3:GetObject
-            Resource: !Sub 'arn:aws:s3:::${ProjectName}/*'
-
-  # S3 BUCKET - Domain-named bucket for website hosting (redirects to main bucket)
-  S3DomainBucket:
-    Type: AWS::S3::Bucket
-    Condition: HasDomainName
-    Properties:
-      BucketName: !Ref DomainName
-      WebsiteConfiguration:
-        RedirectAllRequestsTo:
-          HostName: !GetAtt S3Bucket.DomainName
-          Protocol: http
-      PublicAccessBlockConfiguration:
-        BlockPublicAcls: false
-        BlockPublicPolicy: false
-        IgnorePublicAcls: false
-        RestrictPublicBuckets: false
-      Tags:
-        - Key: Name
-          Value: !Sub '${ProjectName}-domain-redirect-bucket'
-        - Key: Environment
-          Value: !Ref Environment
-
-  S3DomainBucketPolicy:
-    Type: AWS::S3::BucketPolicy
-    Condition: HasDomainName
-    Properties:
-      Bucket: !Ref S3DomainBucket
       PolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -1000,7 +965,7 @@ Outputs:
       Name: !Sub '${ProjectName}-private-subnet-2'
 
   S3BucketName:
-    Description: S3 Bucket for static website hosting
+    Description: S3 Bucket for static website hosting (domain-named bucket)
     Value: !Ref S3Bucket
     Export:
       Name: !Sub '${ProjectName}-s3-bucket'
@@ -1010,20 +975,6 @@ Outputs:
     Value: !GetAtt S3Bucket.WebsiteURL
     Export:
       Name: !Sub '${ProjectName}-s3-website-url'
-
-  S3DomainBucketName:
-    Condition: HasDomainName
-    Description: S3 Domain Bucket Name (redirects to main bucket)
-    Value: !Ref S3DomainBucket
-    Export:
-      Name: !Sub '${ProjectName}-s3-domain-bucket'
-
-  S3DomainWebsiteURL:
-    Condition: HasDomainName
-    Description: S3 Domain Website URL
-    Value: !GetAtt S3DomainBucket.WebsiteURL
-    Export:
-      Name: !Sub '${ProjectName}-s3-domain-website-url'
 
   ClientDomainURL:
     Condition: HasDomainName
