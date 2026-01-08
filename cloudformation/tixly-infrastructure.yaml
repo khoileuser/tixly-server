@@ -16,6 +16,11 @@ Parameters:
     Default: tixly
     Description: Project name used for resource naming
 
+  DomainName:
+    Type: String
+    Default: 'tixly.online'
+    Description: Domain name for Route 53 (optional)
+
   VpcCidr:
     Type: String
     Default: 10.0.0.0/16
@@ -72,11 +77,6 @@ Parameters:
     Type: Number
     Default: 2
     Description: Desired number of ECS tasks
-
-  DomainName:
-    Type: String
-    Default: 'tixly.online'
-    Description: Domain name for Route 53 (optional)
 
   ElastiCacheNodeType:
     Type: String
@@ -837,9 +837,18 @@ Resources:
       Stage: !Ref ApiGatewayStage
 
   # ACM Certificate for API Gateway Custom Domain
+  # NOTE: This requires the domain to be pointed to Route53 nameservers
+  # The certificate will remain in "Pending validation" until:
+  # 1. Route53 hosted zone is created (done automatically)
+  # 2. Domain nameservers are updated to point to Route53 (manual step)
+  # 3. DNS propagation completes (5-30 minutes after nameserver update)
+  # DeletionPolicy: Retain preserves the certificate to avoid re-validation on stack recreate
   ApiGatewayCertificate:
     Type: AWS::CertificateManager::Certificate
     Condition: HasDomainName
+    DependsOn: Route53HostedZone
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       DomainName: !Sub 'api.${DomainName}'
       ValidationMethod: DNS
@@ -961,9 +970,13 @@ Resources:
       Enabled: true
 
   # ROUTE 53 (Optional - only created if DomainName is provided)
+  # DeletionPolicy: Retain ensures the hosted zone is NOT deleted when stack is deleted
+  # This preserves the nameservers so you don't need to update your domain registrar again
   Route53HostedZone:
     Type: AWS::Route53::HostedZone
     Condition: HasDomainName
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       Name: !Ref DomainName
       HostedZoneConfig:
@@ -1064,6 +1077,16 @@ Outputs:
     Value: !Sub 'https://api.${DomainName}'
     Export:
       Name: !Sub '${ProjectName}-api-domain-url'
+
+  Route53NameServers:
+    Condition: HasDomainName
+    Description: Route53 Nameservers - Update your domain registrar to use these nameservers
+    Value: !Join [', ', !GetAtt Route53HostedZone.NameServers]
+
+  CertificateValidationStatus:
+    Condition: HasDomainName
+    Description: Certificate will validate automatically once domain nameservers point to Route53
+    Value: !Sub 'Check ACM console for certificate status for api.${DomainName}'
 
   CognitoUserPoolId:
     Description: Cognito User Pool ID
