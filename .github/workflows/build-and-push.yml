@@ -90,7 +90,8 @@ jobs:
           sudo apt-get update -y && sudo apt-get install -y gh
 
           echo "Retrieving outputs from CloudFormation stack..."
-          NEXT_PUBLIC_API_URL=$(aws cloudformation describe-stacks --stack-name tixly-infrastructure --query "Stacks[0].Outputs[?OutputKey=='ApiGatewayEndpoint'].OutputValue" --output text)
+          API_GATEWAY_ENDPOINT=$(aws cloudformation describe-stacks --stack-name tixly-infrastructure --query "Stacks[0].Outputs[?OutputKey=='ApiGatewayEndpoint'].OutputValue" --output text)
+          NEXT_PUBLIC_API_URL="${API_GATEWAY_ENDPOINT}/api/v1"
           S3_BUCKET_NAME=$(aws cloudformation describe-stacks --stack-name tixly-infrastructure --query "Stacks[0].Outputs[?OutputKey=='S3BucketName'].OutputValue" --output text)
 
           echo "NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL"
