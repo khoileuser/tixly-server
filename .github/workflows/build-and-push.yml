@@ -259,9 +259,9 @@ jobs:
           fi
 
       - name: Update CloudFormation Stack (First Deployment)
-        if: steps.check-ecs.outputs.service_exists == 'false' && needs.setup-infrastructure.outputs.stack_exists == 'true' && steps.template-changes.outputs.has_changes != 'true'
+        if: steps.check-ecs.outputs.service_exists == 'false' && steps.template-changes.outputs.has_changes != 'true'
         run: |
-          echo "ECS service doesn't exist. Updating CloudFormation stack with container image..."
+          echo "ECS service doesn't exist. Updating CloudFormation stack with container image and scaling to 2 tasks..."
 
           # Get the container image URI
           CONTAINER_IMAGE="${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"
