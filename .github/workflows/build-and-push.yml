@@ -78,6 +78,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -89,6 +92,138 @@ jobs:
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Check if CloudFormation stack exists
+        id: check-stack
+        run: |
+          # Check if CloudFormation stack exists
+          if aws cloudformation describe-stacks --stack-name tixly-infrastructure --query 'Stacks[0].StackStatus' --output text 2>/dev/null; then
+            echo "stack_exists=true" >> $GITHUB_OUTPUT
+            echo "CloudFormation stack exists"
+          else
+            echo "stack_exists=false" >> $GITHUB_OUTPUT
+            echo "CloudFormation stack does not exist"
+          fi
+
+      - name: Create CloudFormation stack
+        if: steps.check-stack.outputs.stack_exists == 'false'
+        run: |
+          echo "Creating CloudFormation stack..."
+
+          # Get the container image URI
+          CONTAINER_IMAGE="${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"
+
+          aws cloudformation create-stack \
+            --stack-name tixly-infrastructure \
+            --template-body file://cloudformation/tixly-infrastructure.yaml \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --parameters \
+              ParameterKey=ProjectName,ParameterValue=tixly \
+              ParameterKey=Environment,ParameterValue=production \
+              ParameterKey=ContainerImage,ParameterValue=$CONTAINER_IMAGE \
+              ParameterKey=ClientUrl,ParameterValue=${{ vars.CLIENT_URL }} \
+              ParameterKey=JwtSecret,ParameterValue=${{ secrets.JWT_SECRET }} \
+              ParameterKey=DesiredCount,ParameterValue=2 \
+            --tags \
+              Key=Project,Value=Tixly \
+              Key=Environment,Value=production \
+              Key=ManagedBy,Value=CloudFormation
+
+          echo "Waiting for stack creation to complete..."
+          aws cloudformation wait stack-create-complete --stack-name tixly-infrastructure
+          echo "Stack created successfully!"
+
+      - name: Detect CloudFormation template changes
+        if: steps.check-stack.outputs.stack_exists == 'true'
+        id: template-changes
+        run: |
+          echo "Checking for CloudFormation template changes..."
+
+          # Create a change set to detect differences
+          CONTAINER_IMAGE="${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"
+          CHANGE_SET_NAME="deploy-$(date +%s)"
+
+          # Try to create a change set
+          if aws cloudformation create-change-set \
+            --stack-name tixly-infrastructure \
+            --template-body file://cloudformation/tixly-infrastructure.yaml \
+            --change-set-name $CHANGE_SET_NAME \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --parameters \
+              ParameterKey=ProjectName,UsePreviousValue=true \
+              ParameterKey=Environment,UsePreviousValue=true \
+              ParameterKey=ContainerImage,ParameterValue=$CONTAINER_IMAGE \
+              ParameterKey=ClientUrl,ParameterValue=${{ vars.CLIENT_URL }} \
+              ParameterKey=JwtSecret,ParameterValue=${{ secrets.JWT_SECRET }} \
+              ParameterKey=DesiredCount,ParameterValue=2 2>&1 | tee changeset-output.log; then
+            
+            # Wait for change set creation
+            echo "Waiting for change set to be created..."
+            sleep 10
+            
+            # Check change set status
+            CHANGE_SET_STATUS=$(aws cloudformation describe-change-set \
+              --stack-name tixly-infrastructure \
+              --change-set-name $CHANGE_SET_NAME \
+              --query 'Status' --output text 2>/dev/null || echo "FAILED")
+            
+            if [ "$CHANGE_SET_STATUS" = "CREATE_COMPLETE" ]; then
+              # Get number of changes
+              NUM_CHANGES=$(aws cloudformation describe-change-set \
+                --stack-name tixly-infrastructure \
+                --change-set-name $CHANGE_SET_NAME \
+                --query 'length(Changes)' --output text)
+              
+              if [ "$NUM_CHANGES" -gt 0 ]; then
+                echo "has_changes=true" >> $GITHUB_OUTPUT
+                echo "change_set_name=$CHANGE_SET_NAME" >> $GITHUB_OUTPUT
+                echo "Found $NUM_CHANGES change(s) in CloudFormation template"
+                
+                # Display changes
+                aws cloudformation describe-change-set \
+                  --stack-name tixly-infrastructure \
+                  --change-set-name $CHANGE_SET_NAME \
+                  --query 'Changes[*].[Type, ResourceChange.Action, ResourceChange.LogicalResourceId, ResourceChange.ResourceType]' \
+                  --output table
+              else
+                echo "has_changes=false" >> $GITHUB_OUTPUT
+                echo "No changes detected in CloudFormation template"
+                aws cloudformation delete-change-set \
+                  --stack-name tixly-infrastructure \
+                  --change-set-name $CHANGE_SET_NAME
+              fi
+            else
+              echo "has_changes=false" >> $GITHUB_OUTPUT
+              echo "Change set status: $CHANGE_SET_STATUS - No changes to apply"
+              # Try to delete the change set if it was created
+              aws cloudformation delete-change-set \
+                --stack-name tixly-infrastructure \
+                --change-set-name $CHANGE_SET_NAME 2>/dev/null || true
+            fi
+          else
+            # Check if error is because no changes detected
+            if grep -q "didn't contain changes" changeset-output.log || grep -q "No updates are to be performed" changeset-output.log; then
+              echo "has_changes=false" >> $GITHUB_OUTPUT
+              echo "No changes detected in CloudFormation template"
+            else
+              echo "has_changes=false" >> $GITHUB_OUTPUT
+              echo "Error creating change set, but continuing..."
+              cat changeset-output.log
+            fi
+          fi
+
+      - name: Execute CloudFormation change set
+        if: steps.check-stack.outputs.stack_exists == 'true' && steps.template-changes.outputs.has_changes == 'true'
+        run: |
+          echo "Executing CloudFormation change set..."
+
+          aws cloudformation execute-change-set \
+            --stack-name tixly-infrastructure \
+            --change-set-name ${{ steps.template-changes.outputs.change_set_name }}
+
+          echo "Waiting for stack update to complete..."
+          aws cloudformation wait stack-update-complete --stack-name tixly-infrastructure
+          echo "Stack updated successfully!"
 
       - name: Check if ECS cluster and service exist
         id: check-ecs
@@ -109,7 +244,7 @@ jobs:
           fi
 
       - name: Update CloudFormation Stack (First Deployment)
-        if: steps.check-ecs.outputs.service_exists == 'false'
+        if: steps.check-ecs.outputs.service_exists == 'false' && steps.check-stack.outputs.stack_exists == 'true' && steps.template-changes.outputs.has_changes != 'true'
         run: |
           echo "ECS service doesn't exist. Updating CloudFormation stack with container image..."
 
