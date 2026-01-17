@@ -1,0 +1,212 @@
+name: Deploy Backend to ECS
+
+on:
+    workflow_dispatch:
+        inputs:
+            image_uri:
+                description: "Docker image URI to deploy"
+                required: true
+                type: string
+    workflow_call:
+        inputs:
+            image_uri:
+                description: "Docker image URI to deploy"
+                required: true
+                type: string
+            stack_exists:
+                description: "Whether CloudFormation stack exists"
+                required: false
+                default: "true"
+                type: string
+
+env:
+    AWS_REGION: us-east-1
+    ECS_CLUSTER: tixly-cluster
+    ECS_SERVICE: tixly-service
+
+jobs:
+    deploy-backend:
+        name: Deploy to ECS Fargate
+        runs-on: ubuntu-latest
+
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v4
+
+            - name: Configure AWS credentials
+              uses: aws-actions/configure-aws-credentials@v4
+              with:
+                  aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+                  aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+                  aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+                  aws-region: ${{ env.AWS_REGION }}
+
+            - name: Check CloudFormation for template changes
+              if: inputs.stack_exists == 'true'
+              id: template-changes
+              run: |
+                  echo "Checking for CloudFormation template changes..."
+                  CHANGE_SET_NAME="deploy-$(date +%s)"
+
+                  if aws cloudformation create-change-set \
+                    --stack-name tixly-infrastructure \
+                    --template-body file://cloudformation/tixly-infrastructure.yaml \
+                    --change-set-name $CHANGE_SET_NAME \
+                    --capabilities CAPABILITY_NAMED_IAM \
+                    --parameters \
+                      ParameterKey=ProjectName,UsePreviousValue=true \
+                      ParameterKey=Environment,UsePreviousValue=true \
+                      ParameterKey=ContainerImage,ParameterValue=${{ inputs.image_uri }} \
+                      ParameterKey=ClientUrl,ParameterValue=${{ vars.CLIENT_URL }} \
+                      ParameterKey=JwtSecret,ParameterValue=${{ secrets.JWT_SECRET }} \
+                      ParameterKey=DesiredCount,ParameterValue=2 2>&1 | tee changeset.log; then
+                    
+                    sleep 10
+                    CHANGE_SET_STATUS=$(aws cloudformation describe-change-set \
+                      --stack-name tixly-infrastructure \
+                      --change-set-name $CHANGE_SET_NAME \
+                      --query 'Status' --output text 2>/dev/null || echo "FAILED")
+                    
+                    if [ "$CHANGE_SET_STATUS" = "CREATE_COMPLETE" ]; then
+                      NUM_CHANGES=$(aws cloudformation describe-change-set \
+                        --stack-name tixly-infrastructure \
+                        --change-set-name $CHANGE_SET_NAME \
+                        --query 'length(Changes)' --output text)
+                      
+                      if [ "$NUM_CHANGES" -gt 0 ]; then
+                        echo "has_changes=true" >> $GITHUB_OUTPUT
+                        echo "change_set_name=$CHANGE_SET_NAME" >> $GITHUB_OUTPUT
+                        echo "Found $NUM_CHANGES change(s)"
+                        
+                        aws cloudformation describe-change-set \
+                          --stack-name tixly-infrastructure \
+                          --change-set-name $CHANGE_SET_NAME \
+                          --query 'Changes[*].[ResourceChange.Action, ResourceChange.LogicalResourceId, ResourceChange.ResourceType]' \
+                          --output table
+                      else
+                        echo "has_changes=false" >> $GITHUB_OUTPUT
+                        echo "No template changes detected"
+                        aws cloudformation delete-change-set \
+                          --stack-name tixly-infrastructure \
+                          --change-set-name $CHANGE_SET_NAME
+                      fi
+                    else
+                      echo "has_changes=false" >> $GITHUB_OUTPUT
+                      aws cloudformation delete-change-set \
+                        --stack-name tixly-infrastructure \
+                        --change-set-name $CHANGE_SET_NAME 2>/dev/null || true
+                    fi
+                  else
+                    echo "has_changes=false" >> $GITHUB_OUTPUT
+                    echo "No template changes"
+                  fi
+
+            - name: Execute CloudFormation change set
+              if: steps.template-changes.outputs.has_changes == 'true'
+              run: |
+                  echo "Executing CloudFormation change set..."
+                  aws cloudformation execute-change-set \
+                    --stack-name tixly-infrastructure \
+                    --change-set-name ${{ steps.template-changes.outputs.change_set_name }}
+
+                  echo "Waiting for stack update..."
+                  aws cloudformation wait stack-update-complete --stack-name tixly-infrastructure
+                  echo "Stack updated!"
+
+            - name: Check ECS service status
+              id: check-ecs
+              run: |
+                  if aws ecs describe-services \
+                    --cluster ${{ env.ECS_CLUSTER }} \
+                    --services ${{ env.ECS_SERVICE }} \
+                    --query 'services[0].status' \
+                    --output text 2>/dev/null | grep -q "ACTIVE"; then
+                    echo "service_exists=true" >> $GITHUB_OUTPUT
+                    echo "ECS service exists and is active"
+                  else
+                    echo "service_exists=false" >> $GITHUB_OUTPUT
+                    echo "ECS service not found or inactive"
+                  fi
+
+            - name: Update ECS service
+              if: steps.check-ecs.outputs.service_exists == 'true'
+              run: |
+                  echo "Updating ECS service..."
+                  echo "Image: ${{ inputs.image_uri }}"
+
+                  # Get current task definition
+                  CURRENT_TASK_DEF_ARN=$(aws ecs describe-services \
+                    --cluster ${{ env.ECS_CLUSTER }} \
+                    --services ${{ env.ECS_SERVICE }} \
+                    --query 'services[0].taskDefinition' \
+                    --output text)
+
+                  echo "Current task definition: $CURRENT_TASK_DEF_ARN"
+
+                  # Fetch and modify task definition
+                  aws ecs describe-task-definition \
+                    --task-definition $CURRENT_TASK_DEF_ARN \
+                    --query 'taskDefinition' > task-def.json
+
+                  jq --arg IMAGE "${{ inputs.image_uri }}" \
+                     --arg CLIENT_URL "${{ vars.CLIENT_URL }}" '
+                    .containerDefinitions[0].image = $IMAGE |
+                    .containerDefinitions[0].environment = (
+                      .containerDefinitions[0].environment // [] |
+                      map(select(.name != "CLIENT_URL")) + 
+                      [{"name": "CLIENT_URL", "value": $CLIENT_URL}]
+                    ) |
+                    del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)
+                  ' task-def.json > new-task-def.json
+
+                  # Register new task definition
+                  echo "Registering new task definition..."
+                  NEW_TASK_DEF_ARN=$(aws ecs register-task-definition \
+                    --cli-input-json file://new-task-def.json \
+                    --query 'taskDefinition.taskDefinitionArn' \
+                    --output text)
+
+                  echo "New task definition: $NEW_TASK_DEF_ARN"
+
+                  # Update service
+                  echo "Deploying to ECS..."
+                  aws ecs update-service \
+                    --cluster ${{ env.ECS_CLUSTER }} \
+                    --service ${{ env.ECS_SERVICE }} \
+                    --task-definition $NEW_TASK_DEF_ARN \
+                    --desired-count 2 \
+                    --force-new-deployment
+
+                  echo "Deployment initiated!"
+
+            - name: Create/Update ECS service via CloudFormation
+              if: steps.check-ecs.outputs.service_exists == 'false'
+              run: |
+                  echo "Creating ECS service via CloudFormation..."
+                  aws cloudformation update-stack \
+                    --stack-name tixly-infrastructure \
+                    --use-previous-template \
+                    --capabilities CAPABILITY_NAMED_IAM \
+                    --parameters \
+                      ParameterKey=ProjectName,UsePreviousValue=true \
+                      ParameterKey=Environment,UsePreviousValue=true \
+                      ParameterKey=ContainerImage,ParameterValue=${{ inputs.image_uri }} \
+                      ParameterKey=ClientUrl,ParameterValue=${{ vars.CLIENT_URL }} \
+                      ParameterKey=JwtSecret,ParameterValue=${{ secrets.JWT_SECRET }} \
+                      ParameterKey=DesiredCount,ParameterValue=2
+
+                  echo "Waiting for stack update..."
+                  aws cloudformation wait stack-update-complete --stack-name tixly-infrastructure
+                  echo "ECS service created and running!"
+
+            - name: Deployment summary
+              run: |
+                  echo "## ECS Deployment Summary" >> $GITHUB_STEP_SUMMARY
+                  echo "" >> $GITHUB_STEP_SUMMARY
+                  echo "- **Cluster**: \`${{ env.ECS_CLUSTER }}\`" >> $GITHUB_STEP_SUMMARY
+                  echo "- **Service**: \`${{ env.ECS_SERVICE }}\`" >> $GITHUB_STEP_SUMMARY
+                  echo "- **Image**: \`${{ inputs.image_uri }}\`" >> $GITHUB_STEP_SUMMARY
+                  echo "- **Desired Count**: \`2\`" >> $GITHUB_STEP_SUMMARY
+                  echo "- **Region**: \`${{ env.AWS_REGION }}\`" >> $GITHUB_STEP_SUMMARY
+                  echo "" >> $GITHUB_STEP_SUMMARY
+                  echo "Deployment successful!" >> $GITHUB_STEP_SUMMARY

@@ -1,0 +1,87 @@
+name: Deploy Full Stack
+
+on:
+    push:
+        branches: ["main"]
+        paths:
+            - "src/**"
+            - "lambda/**"
+            - "cloudformation/**"
+            - "Dockerfile"
+            - ".github/workflows/deploy-full-stack.yml"
+    workflow_dispatch:
+
+env:
+    AWS_REGION: us-east-1
+
+jobs:
+    setup-infrastructure:
+        name: Setup Infrastructure
+        uses: ./.github/workflows/infrastructure.yml
+        secrets: inherit
+
+    build-backend:
+        name: Build Backend
+        needs: setup-infrastructure
+        uses: ./.github/workflows/build-backend.yml
+        secrets: inherit
+
+    deploy-backend:
+        name: Deploy Backend
+        needs: [setup-infrastructure, build-backend]
+        uses: ./.github/workflows/deploy-backend.yml
+        with:
+            image_uri: ${{ needs.build-backend.outputs.image_uri }}
+            stack_exists: ${{ needs.setup-infrastructure.outputs.stack_exists }}
+        secrets: inherit
+
+    deploy-lambda:
+        name: Deploy Lambda
+        needs: [setup-infrastructure, deploy-backend]
+        uses: ./.github/workflows/deploy-lambda.yml
+        secrets: inherit
+
+    deployment-summary:
+        name: Deployment Summary
+        needs:
+            [setup-infrastructure, build-backend, deploy-backend, deploy-lambda]
+        runs-on: ubuntu-latest
+        if: always()
+
+        steps:
+            - name: Create deployment summary
+              run: |
+                  echo "# Full Stack Deployment Summary" >> $GITHUB_STEP_SUMMARY
+                  echo "" >> $GITHUB_STEP_SUMMARY
+                  echo "## Workflow Results" >> $GITHUB_STEP_SUMMARY
+                  echo "" >> $GITHUB_STEP_SUMMARY
+                  echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
+                  echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
+                  echo "| Infrastructure | ${{ needs.setup-infrastructure.result == 'success' && 'Success' || 'Failed' }} |" >> $GITHUB_STEP_SUMMARY
+                  echo "| Build Backend | ${{ needs.build-backend.result == 'success' && 'Success' || 'Failed' }} |" >> $GITHUB_STEP_SUMMARY
+                  echo "| Deploy Backend | ${{ needs.deploy-backend.result == 'success' && 'Success' || 'Failed' }} |" >> $GITHUB_STEP_SUMMARY
+                  echo "| Deploy Lambda | ${{ needs.deploy-lambda.result == 'success' && 'Success' || 'Failed' }} |" >> $GITHUB_STEP_SUMMARY
+                  echo "" >> $GITHUB_STEP_SUMMARY
+
+                  if [ "${{ needs.setup-infrastructure.result }}" = "success" ] && \
+                     [ "${{ needs.build-backend.result }}" = "success" ] && \
+                     [ "${{ needs.deploy-backend.result }}" = "success" ] && \
+                     [ "${{ needs.deploy-lambda.result }}" = "success" ]; then
+                    echo "## Deployment Successful!" >> $GITHUB_STEP_SUMMARY
+                    echo "" >> $GITHUB_STEP_SUMMARY
+                    echo "All components deployed successfully:" >> $GITHUB_STEP_SUMMARY
+                    echo "- Infrastructure (VPC, ECS, Lambda, SQS, SNS, DynamoDB)" >> $GITHUB_STEP_SUMMARY
+                    echo "- Backend application on ECS Fargate" >> $GITHUB_STEP_SUMMARY
+                    echo "- Lambda email notification processor" >> $GITHUB_STEP_SUMMARY
+                  else
+                    echo "## Deployment Failed" >> $GITHUB_STEP_SUMMARY
+                    echo "" >> $GITHUB_STEP_SUMMARY
+                    echo "Please check the failed job logs for details." >> $GITHUB_STEP_SUMMARY
+                  fi
+
+                  echo "" >> $GITHUB_STEP_SUMMARY
+                  echo "---" >> $GITHUB_STEP_SUMMARY
+                  echo "" >> $GITHUB_STEP_SUMMARY
+                  echo "**Commit**: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+                  echo "**Branch**: \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
+                  echo "**Triggered by**: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY

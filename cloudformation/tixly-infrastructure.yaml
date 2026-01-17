@@ -826,7 +826,7 @@ Resources:
     Type: AWS::SNS::Topic
     Properties:
       TopicName: !Sub '${ProjectName}-notifications'
-      DisplayName: Tixly Notifications
+      DisplayName: Tixly Email Notifications
       Tags:
         - Key: Name
           Value: !Sub '${ProjectName}-sns-topic'
@@ -837,7 +837,7 @@ Resources:
   SQSQueue:
     Type: AWS::SQS::Queue
     Properties:
-      QueueName: !Sub '${ProjectName}-queue'
+      QueueName: !Sub '${ProjectName}-email-queue'
       VisibilityTimeout: 300
       MessageRetentionPeriod: 1209600
       ReceiveMessageWaitTimeSeconds: 20
@@ -853,7 +853,7 @@ Resources:
   SQSDeadLetterQueue:
     Type: AWS::SQS::Queue
     Properties:
-      QueueName: !Sub '${ProjectName}-dlq'
+      QueueName: !Sub '${ProjectName}-email-dlq'
       MessageRetentionPeriod: 1209600
       Tags:
         - Key: Name
@@ -861,11 +861,14 @@ Resources:
         - Key: Environment
           Value: !Ref Environment
 
-  # LAMBDA FUNCTION
+  # LAMBDA FUNCTION - Email Notification Processor
+  # Note: Lambda code is deployed separately via GitHub Actions workflow
+  # This creates the function with placeholder code that will be updated
   LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub '${ProjectName}-processor'
+      FunctionName: !Sub '${ProjectName}-email-processor'
+      Description: Processes SQS messages and sends email notifications via SNS (deployed via GitHub Actions)
       Runtime: nodejs18.x
       Handler: index.handler
       Role: !Sub 'arn:aws:iam::${AWS::AccountId}:role/LabRole'
@@ -880,14 +883,19 @@ Resources:
       Environment:
         Variables:
           SNS_TOPIC_ARN: !Ref SNSTopic
+          AWS_REGION_OVERRIDE: !Ref AWS::Region
       Code:
         ZipFile: |
+          // Placeholder Lambda code - Real code deployed via GitHub Actions
+          // See: .github/workflows/deploy-lambda.yml
           exports.handler = async (event) => {
-            console.log('Event received:', JSON.stringify(event, null, 2));
-            // Placeholder Lambda function - replace with actual implementation
+            console.log('Placeholder Lambda - Deploy real code via GitHub Actions');
+            console.log('Event:', JSON.stringify(event, null, 2));
             return {
               statusCode: 200,
-              body: JSON.stringify({ message: 'Processed successfully' })
+              body: JSON.stringify({ 
+                message: 'Placeholder function - Deploy via GitHub Actions workflow'
+              })
             };
           };
       Tags:

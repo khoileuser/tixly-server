@@ -1,0 +1,173 @@
+name: Setup Infrastructure
+
+on:
+    workflow_dispatch:
+        inputs:
+            desired_count:
+                description: "ECS desired task count (0 for initial setup, 2+ for running service)"
+                required: false
+                default: "0"
+                type: string
+            container_image:
+                description: "Container image URI (leave empty for initial setup)"
+                required: false
+                type: string
+    workflow_call:
+        inputs:
+            desired_count:
+                description: "ECS desired task count"
+                required: false
+                default: "0"
+                type: string
+            container_image:
+                description: "Container image URI"
+                required: false
+                type: string
+        outputs:
+            stack_exists:
+                description: "Whether CloudFormation stack already existed"
+                value: ${{ jobs.setup-infrastructure.outputs.stack_exists }}
+            stack_was_created:
+                description: "Whether CloudFormation stack was created in this run"
+                value: ${{ jobs.setup-infrastructure.outputs.stack_was_created }}
+
+env:
+    AWS_REGION: us-east-1
+
+jobs:
+    setup-infrastructure:
+        name: Setup CloudFormation Stack
+        runs-on: ubuntu-latest
+        outputs:
+            stack_exists: ${{ steps.check-stack.outputs.stack_exists }}
+            stack_was_created: ${{ steps.mark-stack-created.outputs.stack_was_created }}
+
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v4
+
+            - name: Configure AWS credentials
+              uses: aws-actions/configure-aws-credentials@v4
+              with:
+                  aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+                  aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+                  aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+                  aws-region: ${{ env.AWS_REGION }}
+
+            - name: Check if CloudFormation stack exists
+              id: check-stack
+              run: |
+                  if aws cloudformation describe-stacks --stack-name tixly-infrastructure --query 'Stacks[0].StackStatus' --output text 2>/dev/null; then
+                    echo "stack_exists=true" >> $GITHUB_OUTPUT
+                    echo "CloudFormation stack exists"
+                  else
+                    echo "stack_exists=false" >> $GITHUB_OUTPUT
+                    echo "CloudFormation stack does not exist"
+                  fi
+
+            - name: Create CloudFormation stack
+              if: steps.check-stack.outputs.stack_exists == 'false'
+              run: |
+                  echo "Creating CloudFormation stack..."
+                  echo "Desired Count: ${{ inputs.desired_count || '0' }}"
+                  echo "Container Image: ${{ inputs.container_image || 'none (placeholder)' }}"
+
+                  PARAMS=(
+                    ParameterKey=ProjectName,ParameterValue=tixly
+                    ParameterKey=Environment,ParameterValue=production
+                    ParameterKey=ClientUrl,ParameterValue=${{ vars.CLIENT_URL }}
+                    ParameterKey=JwtSecret,ParameterValue=${{ secrets.JWT_SECRET }}
+                    ParameterKey=DesiredCount,ParameterValue=${{ inputs.desired_count || '0' }}
+                  )
+
+                  # Add container image if provided
+                  if [ -n "${{ inputs.container_image }}" ]; then
+                    PARAMS+=(ParameterKey=ContainerImage,ParameterValue=${{ inputs.container_image }})
+                  fi
+
+                  aws cloudformation create-stack \
+                    --stack-name tixly-infrastructure \
+                    --template-body file://cloudformation/tixly-infrastructure.yaml \
+                    --capabilities CAPABILITY_NAMED_IAM \
+                    --parameters "${PARAMS[@]}" \
+                    --tags \
+                      Key=Project,Value=Tixly \
+                      Key=Environment,Value=production \
+                      Key=ManagedBy,Value=CloudFormation
+
+                  echo "Waiting for stack creation to complete..."
+                  aws cloudformation wait stack-create-complete --stack-name tixly-infrastructure
+                  echo "Stack created successfully!"
+
+            - name: Mark stack created
+              id: mark-stack-created
+              if: steps.check-stack.outputs.stack_exists == 'false'
+              run: echo "stack_was_created=true" >> $GITHUB_OUTPUT
+
+            - name: Update CloudFormation stack
+              if: steps.check-stack.outputs.stack_exists == 'true' && inputs.container_image != ''
+              run: |
+                  echo "Updating CloudFormation stack..."
+                  echo "Container Image: ${{ inputs.container_image }}"
+                  echo "Desired Count: ${{ inputs.desired_count || '0' }}"
+
+                  aws cloudformation update-stack \
+                    --stack-name tixly-infrastructure \
+                    --use-previous-template \
+                    --capabilities CAPABILITY_NAMED_IAM \
+                    --parameters \
+                      ParameterKey=ProjectName,UsePreviousValue=true \
+                      ParameterKey=Environment,UsePreviousValue=true \
+                      ParameterKey=ContainerImage,ParameterValue=${{ inputs.container_image }} \
+                      ParameterKey=ClientUrl,ParameterValue=${{ vars.CLIENT_URL }} \
+                      ParameterKey=JwtSecret,ParameterValue=${{ secrets.JWT_SECRET }} \
+                      ParameterKey=DesiredCount,ParameterValue=${{ inputs.desired_count || '2' }}
+
+                  echo "Waiting for stack update..."
+                  aws cloudformation wait stack-update-complete --stack-name tixly-infrastructure
+                  echo "Stack updated successfully!"
+
+            - name: Display stack outputs
+              run: |
+                  echo "CloudFormation Stack Outputs:"
+                  aws cloudformation describe-stacks \
+                    --stack-name tixly-infrastructure \
+                    --query 'Stacks[0].Outputs[*].[OutputKey,OutputValue]' \
+                    --output table
+
+            - name: Propagate secrets to client repo
+              if: steps.check-stack.outputs.stack_exists == 'false'
+              env:
+                  GH_TOKEN: ${{ secrets.CLIENT_REPO_GH_TOKEN }}
+                  CLIENT_REPO: ${{ vars.CLIENT_REPO }}
+              run: |
+                  if [ -z "$GH_TOKEN" ] || [ -z "$CLIENT_REPO" ]; then
+                    echo "CLIENT_REPO_GH_TOKEN or CLIENT_REPO not set, skipping client sync"
+                    exit 0
+                  fi
+
+                  echo "Propagating secrets to client repository..."
+                  sudo apt-get update -y && sudo apt-get install -y gh
+
+                  API_GATEWAY_ENDPOINT=$(aws cloudformation describe-stacks \
+                    --stack-name tixly-infrastructure \
+                    --query "Stacks[0].Outputs[?OutputKey=='ApiGatewayEndpoint'].OutputValue" \
+                    --output text)
+
+                  S3_BUCKET_NAME=$(aws cloudformation describe-stacks \
+                    --stack-name tixly-infrastructure \
+                    --query "Stacks[0].Outputs[?OutputKey=='S3BucketName'].OutputValue" \
+                    --output text)
+
+                  NEXT_PUBLIC_API_URL="${API_GATEWAY_ENDPOINT}/api/v1"
+
+                  export GH_TOKEN="$GH_TOKEN"
+                  gh secret set AWS_ACCESS_KEY_ID --repo "$CLIENT_REPO" --body "${{ secrets.AWS_ACCESS_KEY_ID }}"
+                  gh secret set AWS_SECRET_ACCESS_KEY --repo "$CLIENT_REPO" --body "${{ secrets.AWS_SECRET_ACCESS_KEY }}"
+                  gh secret set AWS_SESSION_TOKEN --repo "$CLIENT_REPO" --body "${{ secrets.AWS_SESSION_TOKEN }}"
+                  gh variable set NEXT_PUBLIC_API_URL --repo "$CLIENT_REPO" --body "$NEXT_PUBLIC_API_URL"
+                  gh variable set S3_BUCKET_NAME --repo "$CLIENT_REPO" --body "$S3_BUCKET_NAME"
+
+                  echo "Secrets propagated successfully!"
+                  echo "Triggering client deployment..."
+                  gh workflow run "Build and Push to AWS S3" --repo "$CLIENT_REPO" --ref main

@@ -18,6 +18,9 @@ const env = {
     cognitoClientId: process.env.COGNITO_CLIENT_ID,
     cognitoClientSecret: process.env.COGNITO_CLIENT_SECRET,
     s3BucketName: process.env.S3_BUCKET_NAME,
+    // SQS and SNS for email notifications
+    sqsQueueUrl: process.env.SQS_QUEUE_URL,
+    snsTopicArn: process.env.SNS_TOPIC_ARN,
   },
 
   redis: {

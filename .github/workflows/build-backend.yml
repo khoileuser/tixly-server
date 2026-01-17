@@ -1,0 +1,99 @@
+name: Build Backend Image
+
+on:
+    workflow_dispatch:
+    workflow_call:
+        outputs:
+            image_uri:
+                description: "Built Docker image URI"
+                value: ${{ jobs.build-backend.outputs.image_uri }}
+            image_tag:
+                description: "Docker image tag (commit SHA)"
+                value: ${{ jobs.build-backend.outputs.image_tag }}
+
+env:
+    AWS_REGION: us-east-1
+    ECR_REPOSITORY: tixly-backend
+
+jobs:
+    build-backend:
+        name: Build and Push Docker Image
+        runs-on: ubuntu-latest
+        outputs:
+            image_uri: ${{ steps.build-image.outputs.image }}
+            image_tag: ${{ github.sha }}
+
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v4
+
+            - name: Configure AWS credentials
+              uses: aws-actions/configure-aws-credentials@v4
+              with:
+                  aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+                  aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+                  aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+                  aws-region: ${{ env.AWS_REGION }}
+
+            - name: Login to Amazon ECR
+              id: login-ecr
+              uses: aws-actions/amazon-ecr-login@v2
+
+            - name: Create .env file
+              run: |
+                  echo "Creating production .env file..."
+                  cat > .env << EOF
+                  # Server Configuration
+                  HOST=0.0.0.0
+                  PORT=8080
+                  NODE_ENV=production
+                  CLIENT_URL=${{ vars.CLIENT_URL }}
+
+                  # Booking Configuration
+                  BOOKING_TIMEOUT_MINUTES=10
+
+                  # AWS Configuration (Region only - credentials use IAM role in ECS)
+                  AWS_REGION=${{ env.AWS_REGION }}
+
+                  # S3 Configuration
+                  S3_BUCKET_NAME=${{ vars.S3_BUCKET_NAME }}
+
+                  # JWT Configuration
+                  JWT_SECRET=${{ secrets.JWT_SECRET }}
+                  EOF
+
+            - name: Build, tag, and push image to ECR
+              id: build-image
+              env:
+                  ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+                  IMAGE_TAG: ${{ github.sha }}
+              run: |
+                  echo "Building Docker image..."
+                  echo "Repository: $ECR_REGISTRY/$ECR_REPOSITORY"
+                  echo "Tags: $IMAGE_TAG, latest"
+
+                  # Build images
+                  docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+                  docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
+
+                  # Push to ECR
+                  echo "Pushing to Amazon ECR..."
+                  docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+                  docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+                  # Output image URI
+                  IMAGE_URI="$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+                  echo "Image pushed successfully!"
+                  echo "Image URI: $IMAGE_URI"
+                  echo "image=$IMAGE_URI" >> $GITHUB_OUTPUT
+
+            - name: Summary
+              env:
+                  ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+              run: |
+                  echo "## Docker Build Summary" >> $GITHUB_STEP_SUMMARY
+                  echo "" >> $GITHUB_STEP_SUMMARY
+                  echo "- **Repository**: \`${{ env.ECR_REPOSITORY }}\`" >> $GITHUB_STEP_SUMMARY
+                  echo "- **Image Tag**: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+                  echo "- **Image URI**: \`$ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+                  echo "- **Region**: \`${{ env.AWS_REGION }}\`" >> $GITHUB_STEP_SUMMARY

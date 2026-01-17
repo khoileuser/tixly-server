@@ -11,6 +11,7 @@ const {
 const { NodeHttpHandler } = require('@smithy/node-http-handler');
 const env = require('../config/env');
 const { BookingModel, EventModel } = require('../models');
+const notificationService = require('./notification.service');
 
 let dynamoDb = null;
 
@@ -153,7 +154,37 @@ const confirmBooking = async (ticketId, paymentInfo) => {
   ]);
 
   const result = await db.send(new UpdateCommand(ticketParams));
-  return result.Attributes;
+  const confirmedBooking = result.Attributes;
+
+  // Send booking confirmation email notification (async, non-blocking)
+  try {
+    // Fetch event details for the notification
+    const eventResult = await db.send(
+      new GetCommand({
+        TableName: EventModel.tableName,
+        Key: { id: booking.eventId },
+      })
+    );
+    const event = eventResult.Item;
+
+    // Send notification to SQS (fire and forget)
+    notificationService
+      .sendBookingConfirmation(confirmedBooking, event, booking.email)
+      .catch((err) =>
+        console.error(
+          '[BookingService] Failed to queue confirmation notification:',
+          err
+        )
+      );
+  } catch (notificationError) {
+    // Log but don't fail the booking confirmation
+    console.error(
+      '[BookingService] Error preparing confirmation notification:',
+      notificationError
+    );
+  }
+
+  return confirmedBooking;
 };
 
 // Update customer info on ticket
@@ -447,10 +478,32 @@ const refundBooking = async (ticketId) => {
     );
   }
 
+  const refundedBooking = { ...booking, ...refundData };
+
+  // Send refund notification email (async, non-blocking)
+  try {
+    const event = eventResult?.Item || null;
+    // Send notification to SQS (fire and forget)
+    notificationService
+      .sendRefundNotification(refundedBooking, event, booking.email)
+      .catch((err) =>
+        console.error(
+          '[BookingService] Failed to queue refund notification:',
+          err
+        )
+      );
+  } catch (notificationError) {
+    // Log but don't fail the refund
+    console.error(
+      '[BookingService] Error preparing refund notification:',
+      notificationError
+    );
+  }
+
   return {
     success: true,
     message: 'Booking refunded successfully',
-    data: { ...booking, ...refundData },
+    data: refundedBooking,
   };
 };
 

@@ -7,8 +7,6 @@ const {
   ForgotPasswordCommand,
   ConfirmForgotPasswordCommand,
   GetUserCommand,
-  AdminGetUserCommand,
-  AdminListGroupsForUserCommand,
 } = require('@aws-sdk/client-cognito-identity-provider');
 const {
   PutCommand,
@@ -19,6 +17,7 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const env = require('../config/env');
 const { UserModel } = require('../models');
+const snsService = require('./sns.service');
 
 // Create Cognito client configuration
 const cognitoClientConfig = {
@@ -125,10 +124,30 @@ const register = async (userData, dynamoClient) => {
       })
     );
 
+    // Step 3: Subscribe user's email to SNS topic for notifications (non-blocking)
+    // This happens in the background and won't fail the registration
+    snsService
+      .subscribeEmail(email)
+      .then((subscriptionResult) => {
+        if (subscriptionResult?.success) {
+          console.log(
+            `[AuthService] User ${email} subscribed to SNS notifications`
+          );
+        } else {
+          console.warn(
+            `[AuthService] Failed to subscribe ${email} to SNS:`,
+            subscriptionResult?.error
+          );
+        }
+      })
+      .catch((err) => {
+        console.error(`[AuthService] Error subscribing ${email} to SNS:`, err);
+      });
+
     return {
       success: true,
       message:
-        'User registered successfully. Please check your email to verify your account.',
+        'User registered successfully. Please check your email to verify your account and confirm your notification subscription.',
       data: {
         cognitoId,
         username,
