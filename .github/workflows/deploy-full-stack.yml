@@ -51,7 +51,7 @@ jobs:
         steps:
             - name: Create deployment summary
               run: |
-                  echo "# Full Stack Deployment Summary" >> $GITHUB_STEP_SUMMARY
+                  echo "# Deployment Summary" >> $GITHUB_STEP_SUMMARY
                   echo "" >> $GITHUB_STEP_SUMMARY
                   echo "## Workflow Results" >> $GITHUB_STEP_SUMMARY
                   echo "" >> $GITHUB_STEP_SUMMARY
@@ -61,27 +61,3 @@ jobs:
                   echo "| Build Backend | ${{ needs.build-backend.result == 'success' && 'Success' || 'Failed' }} |" >> $GITHUB_STEP_SUMMARY
                   echo "| Deploy Backend | ${{ needs.deploy-backend.result == 'success' && 'Success' || 'Failed' }} |" >> $GITHUB_STEP_SUMMARY
                   echo "| Deploy Lambda | ${{ needs.deploy-lambda.result == 'success' && 'Success' || 'Failed' }} |" >> $GITHUB_STEP_SUMMARY
-                  echo "" >> $GITHUB_STEP_SUMMARY
-
-                  if [ "${{ needs.setup-infrastructure.result }}" = "success" ] && \
-                     [ "${{ needs.build-backend.result }}" = "success" ] && \
-                     [ "${{ needs.deploy-backend.result }}" = "success" ] && \
-                     [ "${{ needs.deploy-lambda.result }}" = "success" ]; then
-                    echo "## Deployment Successful!" >> $GITHUB_STEP_SUMMARY
-                    echo "" >> $GITHUB_STEP_SUMMARY
-                    echo "All components deployed successfully:" >> $GITHUB_STEP_SUMMARY
-                    echo "- Infrastructure (VPC, ECS, Lambda, SQS, SNS, DynamoDB)" >> $GITHUB_STEP_SUMMARY
-                    echo "- Backend application on ECS Fargate" >> $GITHUB_STEP_SUMMARY
-                    echo "- Lambda email notification processor" >> $GITHUB_STEP_SUMMARY
-                  else
-                    echo "## Deployment Failed" >> $GITHUB_STEP_SUMMARY
-                    echo "" >> $GITHUB_STEP_SUMMARY
-                    echo "Please check the failed job logs for details." >> $GITHUB_STEP_SUMMARY
-                  fi
-
-                  echo "" >> $GITHUB_STEP_SUMMARY
-                  echo "---" >> $GITHUB_STEP_SUMMARY
-                  echo "" >> $GITHUB_STEP_SUMMARY
-                  echo "**Commit**: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
-                  echo "**Branch**: \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
-                  echo "**Triggered by**: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY

@@ -198,15 +198,3 @@ jobs:
                   echo "Waiting for stack update..."
                   aws cloudformation wait stack-update-complete --stack-name tixly-infrastructure
                   echo "ECS service created and running!"
-
-            - name: Deployment summary
-              run: |
-                  echo "## ECS Deployment Summary" >> $GITHUB_STEP_SUMMARY
-                  echo "" >> $GITHUB_STEP_SUMMARY
-                  echo "- **Cluster**: \`${{ env.ECS_CLUSTER }}\`" >> $GITHUB_STEP_SUMMARY
-                  echo "- **Service**: \`${{ env.ECS_SERVICE }}\`" >> $GITHUB_STEP_SUMMARY
-                  echo "- **Image**: \`${{ inputs.image_uri }}\`" >> $GITHUB_STEP_SUMMARY
-                  echo "- **Desired Count**: \`2\`" >> $GITHUB_STEP_SUMMARY
-                  echo "- **Region**: \`${{ env.AWS_REGION }}\`" >> $GITHUB_STEP_SUMMARY
-                  echo "" >> $GITHUB_STEP_SUMMARY
-                  echo "Deployment successful!" >> $GITHUB_STEP_SUMMARY

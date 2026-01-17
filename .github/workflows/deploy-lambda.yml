@@ -21,12 +21,10 @@ jobs:
             - name: Checkout code
               uses: actions/checkout@v4
 
-            - name: Setup Node.js
-              uses: actions/setup-node@v4
+            - name: Setup Bun
+              uses: oven-sh/setup-bun@v2
               with:
-                  node-version: "24"
-                  cache: "npm"
-                  cache-dependency-path: lambda/email-notification/package.json
+                  bun-version: latest
 
             - name: Configure AWS credentials
               uses: aws-actions/configure-aws-credentials@v4
@@ -39,8 +37,8 @@ jobs:
             - name: Install Lambda dependencies
               working-directory: lambda/email-notification
               run: |
-                  echo "Installing production dependencies..."
-                  npm ci --production
+                  echo "Installing production dependencies with Bun..."
+                  bun install --production
 
             - name: Create deployment package
               working-directory: lambda/email-notification
@@ -94,20 +92,6 @@ jobs:
                   echo "Lambda function still not available after 5 minutes"
                   exit 1
 
-            - name: Infrastructure not found error
-              if: steps.check-stack.outputs.stack_exists == 'false'
-              run: |
-                  echo "ERROR: CloudFormation stack 'tixly-infrastructure' does not exist!"
-                  echo ""
-                  echo "Please run the infrastructure setup first:"
-                  echo "  1. Go to Actions → 'Setup Infrastructure'"
-                  echo "  2. Click 'Run workflow'"
-                  echo "  3. Wait for infrastructure to be created"
-                  echo ""
-                  echo "Or run the full deployment workflow:"
-                  echo "  Actions → 'Deploy Full Stack'"
-                  exit 1
-
             - name: Update Lambda function code
               if: steps.check-lambda.outputs.lambda_exists == 'true' || steps.check-stack.outputs.stack_exists == 'true'
               working-directory: lambda/email-notification
@@ -136,16 +120,3 @@ jobs:
                     --output text)
                   echo "Published version: $VERSION"
                   echo "version=$VERSION" >> $GITHUB_OUTPUT
-
-            - name: Deployment summary
-              if: steps.check-lambda.outputs.lambda_exists == 'true' || steps.check-stack.outputs.stack_exists == 'true'
-              run: |
-                  echo "## Lambda Deployment Summary" >> $GITHUB_STEP_SUMMARY
-                  echo "" >> $GITHUB_STEP_SUMMARY
-                  echo "- **Function**: \`${{ env.LAMBDA_FUNCTION_NAME }}\`" >> $GITHUB_STEP_SUMMARY
-                  echo "- **Version**: \`${{ steps.publish-version.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
-                  echo "- **Region**: \`${{ env.AWS_REGION }}\`" >> $GITHUB_STEP_SUMMARY
-                  echo "- **Commit**: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
-                  echo "" >> $GITHUB_STEP_SUMMARY
-                  echo "Deployment successful!" >> $GITHUB_STEP_SUMMARY
-                  echo "Commit: ${{ github.sha }}"
