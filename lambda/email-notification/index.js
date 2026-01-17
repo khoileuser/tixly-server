@@ -80,7 +80,7 @@ Thank you for choosing Tixly!
 Best regards,
 The Tixly Team
 
----
+--
 This is an automated message. Please do not reply directly to this email.
   `.trim();
 
@@ -149,7 +149,7 @@ Thank you for using Tixly!
 Best regards,
 The Tixly Team
 
----
+--
 This is an automated message. Please do not reply directly to this email.
   `.trim();
 
