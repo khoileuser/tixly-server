@@ -728,8 +728,8 @@ Resources:
     Type: AWS::ApplicationAutoScaling::ScalableTarget
     Condition: HasContainerImage
     Properties:
-      MaxCapacity: 10
-      MinCapacity: 1
+      MaxCapacity: 4
+      MinCapacity: 2
       ResourceId: !Sub 'service/${ECSCluster}/${ECSService.Name}'
       RoleARN: !Sub 'arn:aws:iam::${AWS::AccountId}:role/aws-service-role/ecs.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_ECSService'
       ScalableDimension: ecs:service:DesiredCount
